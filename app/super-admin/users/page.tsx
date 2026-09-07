@@ -1,6 +1,6 @@
 'use client';
 
-import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useMemo, useState, startTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle, Ban, Building2, Check, ChevronDown, KeyRound, Loader2,
@@ -132,11 +132,16 @@ export default function SuperAdminUsersPage() {
 
   useEffect(() => {
     if (showCreate && form.organizationId) {
-      // Branch data is an external resource; avoid synchronous setState lint cascading-render warning.
       const organizationId = form.organizationId;
-      void loadBranches(organizationId).catch(e => setError(e.message || 'Failed to load branches'));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLoadingBranches(true);
+      fetch(`/api/super-admin/branches?organizationId=${encodeURIComponent(organizationId)}`, { headers: headers() })
+        .then(r => r.json())
+        .then(d => { if (d.error) throw new Error(d.error); startTransition(() => { setBranches(d.data || []); }); })
+        .catch((e: any) => setError(e.message || 'Failed to load branches'))
+        .finally(() => setLoadingBranches(false));
     }
-  }, [showCreate, form.organizationId, loadBranches]);
+  }, [showCreate, form.organizationId]);
 
   const selectedRestaurant = useMemo(() => restaurants.find(r => r.id === form.organizationId), [restaurants, form.organizationId]);
 

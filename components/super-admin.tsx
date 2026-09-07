@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -178,6 +178,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
   const [createOrgForm, setCreateOrgForm] = useState({
     name: '', contactEmail: '', contactPhone: '', taxId: '', address: '',
     branchName: '', branchLocation: '', managerName: '', managerEmail: '', managerPhone: '',
+    adminName: '', adminEmail: '', adminPassword: '',
   });
 
   // ===================== USERS STATE =====================
@@ -190,6 +191,10 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
   const [showResetPin, setShowResetPin] = useState<string | null>(null);
   const [newPin, setNewPin] = useState('');
   const [showResetPassword, setShowResetPassword] = useState<string | null>(null);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [addUserForm, setAddUserForm] = useState({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' });
+  const [addUserBranches, setAddUserBranches] = useState<any[]>([]);
+  const [addUserLoading, setAddUserLoading] = useState(false);
 
   // ===================== DEVICES STATE =====================
   const [deviceSearch, setDeviceSearch] = useState('');
@@ -621,7 +626,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
       const d = await res.json();
       if (res.ok) {
         setShowCreateOrg(false);
-        setCreateOrgForm({ name: '', contactEmail: '', contactPhone: '', taxId: '', address: '', branchName: '', branchLocation: '', managerName: '', managerEmail: '', managerPhone: '' });
+        setCreateOrgForm({ name: '', contactEmail: '', contactPhone: '', taxId: '', address: '', branchName: '', branchLocation: '', managerName: '', managerEmail: '', managerPhone: '', adminName: '', adminEmail: '', adminPassword: '' });
         showToast('Restaurant created successfully!');
         fetchDashboardData();
       } else {
@@ -680,8 +685,8 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
     setStaffActionLoading(staffId);
     try {
       const newPassword = Math.random().toString(36).substring(2, 10) + 'A1!';
-      const res = await fetch(`/api/staff/${staffId}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/super-admin/users/${staffId}/reset-password`, {
+        method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ password: newPassword }),
       });
@@ -694,6 +699,60 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
       }
     } catch (e: any) { showToast(e.message || 'Network error', 'error'); } finally {
       setStaffActionLoading(null);
+    }
+  };
+
+  // ===================== ADD USER ACTIONS =====================
+  useEffect(() => {
+    let cancelled = false;
+    if (addUserForm.organizationId) {
+      fetch(`/api/branches?organization_id=${addUserForm.organizationId}`, { headers: authHeaders() })
+        .then(r => r.ok ? r.json() : { data: [] })
+        .then(d => { if (!cancelled) startTransition(() => { setAddUserBranches(d.data || d || []); }); })
+        .catch(() => {});
+      startTransition(() => { setAddUserForm(p => ({ ...p, branchId: '' })); });
+    } else {
+      startTransition(() => { setAddUserBranches([]); });
+    }
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addUserForm.organizationId]);
+
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addUserForm.name.trim() || !addUserForm.email.trim() || !addUserForm.password.trim()) {
+      showToast('Name, email and password are required', 'error'); return;
+    }
+    if (!addUserForm.organizationId) {
+      showToast('Please select a restaurant', 'error'); return;
+    }
+    setAddUserLoading(true);
+    try {
+      const res = await fetch('/api/super-admin/users', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: addUserForm.name.trim(),
+          email: addUserForm.email.trim(),
+          password: addUserForm.password,
+          role: addUserForm.role,
+          organizationId: addUserForm.organizationId,
+          branchId: addUserForm.branchId || undefined,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setShowAddUser(false);
+        setAddUserForm({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' });
+        showToast('User created successfully!');
+        fetchDashboardData();
+      } else {
+        showToast(d.error || 'Failed to create user', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Network error', 'error');
+    } finally {
+      setAddUserLoading(false);
     }
   };
 
@@ -1479,9 +1538,22 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
           {/* ======================== USERS TAB ======================== */}
           {activeTab === 'users' && (
             <motion.div key="users" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2 flex-1">
-              <div>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Users</h2>
-                <p className="text-slate-500 font-medium text-xs">Search and manage all staff across restaurants.</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Users</h2>
+                  <p className="text-slate-500 font-medium text-xs">Search and manage all staff across restaurants.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (orgs.length > 0 && !addUserForm.organizationId) {
+                      setAddUserForm(p => ({ ...p, organizationId: orgs[0].id }));
+                    }
+                    setShowAddUser(true);
+                  }}
+                  className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 hover:scale-[1.02] transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Add User
+                </button>
               </div>
 
               {/* Filters */}
@@ -1654,10 +1726,69 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                   </div>
                 )}
               </AnimatePresence>
+
+              {/* Add User Modal */}
+              <AnimatePresence>
+                {showAddUser && (
+                  <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#121214] rounded-[2.5rem] p-8 max-w-lg w-full border border-black/10 dark:border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Add User</h3>
+                        <button onClick={() => { setShowAddUser(false); setAddUserForm({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' }); }} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"><X className="w-5 h-5 text-slate-400" /></button>
+                      </div>
+                      <form onSubmit={handleAddUser} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Full Name *</label>
+                          <input type="text" required value={addUserForm.name} onChange={e => setAddUserForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. John Doe" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Email *</label>
+                          <input type="email" required value={addUserForm.email} onChange={e => setAddUserForm(p => ({ ...p, email: e.target.value }))} placeholder="user@restaurant.com" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Password *</label>
+                          <input type="password" required value={addUserForm.password} onChange={e => setAddUserForm(p => ({ ...p, password: e.target.value }))} placeholder="Min 8 characters" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Role *</label>
+                          <select value={addUserForm.role} onChange={e => setAddUserForm(p => ({ ...p, role: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 cursor-pointer">
+                            <option value="cashier">Cashier</option>
+                            <option value="branch_manager">Branch Manager</option>
+                            <option value="restaurant_admin">Restaurant Admin</option>
+                            <option value="senior_waiter">Senior Waiter</option>
+                            <option value="head_chef">Head Chef</option>
+                            <option value="kitchen_staff">Kitchen Staff</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Restaurant *</label>
+                          <select required value={addUserForm.organizationId} onChange={e => setAddUserForm(p => ({ ...p, organizationId: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 cursor-pointer">
+                            <option value="">Select restaurant...</option>
+                            {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                          </select>
+                        </div>
+                        {addUserBranches.length > 0 && (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Branch</label>
+                            <select value={addUserForm.branchId} onChange={e => setAddUserForm(p => ({ ...p, branchId: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 cursor-pointer">
+                              <option value="">No specific branch</option>
+                              {addUserBranches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          </div>
+                        )}
+                        <div className="flex gap-3 pt-4">
+                          <button type="button" onClick={() => { setShowAddUser(false); setAddUserForm({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' }); }} className="flex-1 py-3 font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+                          <button type="submit" disabled={addUserLoading} className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-orange-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                            {addUserLoading ? <><LoadingSpinner size="sm" /> Creating...</> : 'Create User'}
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
-
-          {/* ======================== DEVICES TAB ======================== */}
           {activeTab === 'devices' && (
             <motion.div key="devices" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2 flex-1">
               <div className="flex justify-between items-center">
@@ -2952,7 +3083,27 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                 </div>
 
                 <div className="border-t border-black/5 dark:border-white/5 pt-4 mt-4">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Manager Account (Optional)</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Restaurant Admin (Required)</p>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Admin Name *</label>
+                        <input type="text" required value={createOrgForm.adminName} onChange={e => setCreateOrgForm(p => ({ ...p, adminName: e.target.value }))} placeholder="e.g. John Admin" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Admin Email *</label>
+                        <input type="email" required value={createOrgForm.adminEmail} onChange={e => setCreateOrgForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@restaurant.com" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Admin Password *</label>
+                      <input type="password" required value={createOrgForm.adminPassword} onChange={e => setCreateOrgForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="Min 8 characters" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-black/5 dark:border-white/5 pt-4 mt-4">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Branch Manager (Optional)</p>
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div>

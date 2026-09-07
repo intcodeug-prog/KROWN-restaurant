@@ -8,9 +8,12 @@ import { logAuditEvent } from '@/lib/audit';
 const ROLE_MAP: Record<string, string> = {
   admin: 'restaurant_admin',
   restaurant_admin: 'restaurant_admin',
-  manager: 'manager',
+  branch_manager: 'branch_manager',
+  manager: 'branch_manager',
   cashier: 'cashier',
-  waiter: 'waiter',
+  senior_waiter: 'senior_waiter',
+  waiter: 'senior_waiter',
+  head_chef: 'head_chef',
   kitchen_staff: 'kitchen_staff',
 };
 
@@ -62,7 +65,7 @@ export async function POST(request: NextRequest) {
     const roleInput = String(body.role || '').trim().toLowerCase();
     const role = ROLE_MAP[roleInput];
     const organizationId = String(body.organizationId || '').trim();
-    const assignedBranchId = String(body.assignedBranchId || '').trim() || null;
+    const assignedBranchId = String(body.assignedBranchId || body.branchId || '').trim() || null;
     const password = String(body.password || '');
     if (!name || name.length < 2) return NextResponse.json({ error: 'Full name is required' }, { status: 400 });
     if (!/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: 'A valid email is required' }, { status: 400 });
@@ -73,9 +76,11 @@ export async function POST(request: NextRequest) {
     const sql = getSql();
     const org = await sql`SELECT id FROM organizations WHERE id=${organizationId} LIMIT 1`;
     if (!org.length) return NextResponse.json({ error: 'Restaurant not found' }, { status: 404 });
+    let branchName = null;
     if (assignedBranchId) {
-      const branch = await sql`SELECT id FROM branches WHERE id=${assignedBranchId} AND organization_id=${organizationId} LIMIT 1`;
+      const branch = await sql`SELECT id, name FROM branches WHERE id=${assignedBranchId} AND organization_id=${organizationId} LIMIT 1`;
       if (!branch.length) return NextResponse.json({ error: 'Selected branch does not belong to this restaurant' }, { status: 400 });
+      branchName = branch[0].name;
     }
     const duplicate = await sql`SELECT id FROM staff WHERE lower(email)=${email} LIMIT 1`;
     if (duplicate.length) return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 });
@@ -83,9 +88,9 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hashPassword(password);
     const id = generateId();
     const rows = await sql`
-      INSERT INTO staff (id,name,email,phone,role,status,assigned_branch_id,organization_id,password_argon2,email_verified,created_at,updated_at)
-      VALUES (${id},${name},${email},${phone},${role},'active',${assignedBranchId},${organizationId},${passwordHash},false,NOW(),NOW())
-      RETURNING id,name,email,phone,role,status,assigned_branch_id,organization_id,created_at`;
+      INSERT INTO staff (id, name, email, phone, role, branch, status, assigned_branch_id, organization_id, password_hash, password_argon2, email_verified, created_at, updated_at)
+      VALUES (${id}, ${name}, ${email}, ${phone}, ${role}, ${branchName}, 'active', ${assignedBranchId}, ${organizationId}, ${passwordHash}, ${passwordHash}, false, NOW(), NOW())
+      RETURNING id, name, email, phone, role, status, assigned_branch_id, organization_id, created_at`;
 
     await logAuditEvent({ organizationId, userId: ctx.userId, userEmail: 'super_admin', actorRole: 'super_admin', action: 'SUPER_ADMIN_USER_CREATE', targetType: 'staff', targetId: id, details: { name, email, role, assignedBranchId } });
     return NextResponse.json({ data: rows[0] }, { status: 201 });
