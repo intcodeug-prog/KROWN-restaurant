@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Device-bound staff must prove possession of the enrolled terminal.
-    // Admin roles intentionally remain device-independent and can use PIN on any device.
+    // Only super admins can use PIN on any device (no device context needed).
+    // All other staff (including restaurant_admin) require a registered device.
     if (!deviceId && !challenge && !signature) {
       const result = await authenticateByPinOnly(String(pin));
       if (!result.success || !result.token || !result.staff) {

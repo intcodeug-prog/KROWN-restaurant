@@ -221,8 +221,10 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
         dataStore.updateStaffStatus(staffMember.id, extra.status);
         setStaff(prev => prev.map(s => s.id === staffMember.id ? { ...s, status: extra.status } : s));
       } else if (action === 'update_role' && extra?.role) {
-        dataStore.updateStaffRole(staffMember.id, extra.role);
-        setStaff(prev => prev.map(s => s.id === staffMember.id ? { ...s, role: extra.role } : s));
+        const dbRole = normalizeRole(extra.role) as StaffMember['role'];
+        dataStore.updateStaffRole(staffMember.id, dbRole);
+        setStaff(prev => prev.map(s => s.id === staffMember.id ? { ...s, role: dbRole } : s));
+        extra = { ...extra, role: dbRole };
       }
 
       const token = typeof window !== 'undefined' ? localStorage.getItem('krown_session_token') : null;
@@ -247,20 +249,34 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
   };
 
   // ── Role badge styling ────────────────────────────────────────────────────
+  // ── Role normalization ─────────────────────────────────────────────────────
+  const normalizeRole = (r: string) => {
+    const map: Record<string, string> = {
+      super_admin: 'Super Admin', restaurant_admin: 'Restaurant Admin', admin: 'Restaurant Admin',
+      branch_manager: 'Branch Manager', manager: 'Branch Manager',
+      head_chef: 'Head Chef', chef: 'Head Chef', kitchen_staff: 'Kitchen Staff',
+      cashier: 'Cashier', senior_waiter: 'Senior Waiter', waiter: 'Senior Waiter',
+    };
+    return map[r?.toLowerCase()?.replace(/[\s-]+/g, '_')] || r || 'Staff';
+  };
   const roleBadge = (r: string) => {
-    if (r === 'Super Admin') return 'bg-purple-500/10 text-purple-600 dark:text-purple-400';
-    if (r === 'Branch Manager') return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
-    if (r === 'Head Chef' || r === 'Kitchen Staff') return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400';
-    if (r === 'Cashier') return 'bg-teal-500/10 text-teal-600 dark:text-teal-400';
+    const nr = normalizeRole(r);
+    if (nr === 'Super Admin') return 'bg-purple-500/10 text-purple-600 dark:text-purple-400';
+    if (nr === 'Restaurant Admin') return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
+    if (nr === 'Branch Manager') return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
+    if (nr === 'Head Chef' || nr === 'Kitchen Staff') return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400';
+    if (nr === 'Cashier') return 'bg-teal-500/10 text-teal-600 dark:text-teal-400';
     return 'bg-blue-500/10 text-blue-600 dark:text-blue-400';
   };
 
   // ── Dashboard routes by role (for display) ────────────────────────────────
   const roleDashboard = (r: string) => {
-    if (r === 'Super Admin') return 'Admin Dashboard';
-    if (r === 'Branch Manager') return 'Manager Dashboard';
-    if (r === 'Head Chef' || r === 'Kitchen Staff') return 'Kitchen Display';
-    if (r === 'Cashier') return 'Cashier Checkout';
+    const nr = normalizeRole(r);
+    if (nr === 'Super Admin') return 'Admin Dashboard';
+    if (nr === 'Restaurant Admin') return 'Admin Dashboard';
+    if (nr === 'Branch Manager') return 'Manager Dashboard';
+    if (nr === 'Head Chef' || nr === 'Kitchen Staff') return 'Kitchen Display';
+    if (nr === 'Cashier') return 'Cashier Checkout';
     return 'POS Terminal';
   };
 
@@ -380,7 +396,7 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
 
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <select
-                      value={u.role || 'Senior Waiter'}
+                      value={normalizeRole(u.role)}
                       onChange={(e) => {
                         const newRole = e.target.value;
                         if (confirm(`Change ${u.name}'s role to "${newRole}"?`)) {
@@ -390,11 +406,12 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
                       className={`px-3 py-1 rounded-full text-xs font-bold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 ${roleBadge(u.role)}`}
                       title="Click to change staff role"
                     >
-                      <option value="Senior Waiter">Senior Waiter (POS)</option>
+                      <option value="Restaurant Admin">Restaurant Admin</option>
+                      <option value="Branch Manager">Branch Manager (Manager)</option>
                       <option value="Cashier">Cashier (Checkout)</option>
+                      <option value="Senior Waiter">Senior Waiter (POS)</option>
                       <option value="Head Chef">Head Chef (Kitchen)</option>
                       <option value="Kitchen Staff">Kitchen Staff (Kitchen)</option>
-                      <option value="Branch Manager">Branch Manager (Manager)</option>
                     </select>
                     <span className={`text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
                       u.status === 'banned' ? 'bg-red-500/20 text-red-500' :

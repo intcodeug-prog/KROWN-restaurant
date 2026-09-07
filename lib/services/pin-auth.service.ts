@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { getSql } from '@/lib/neon-server';
 import { createToken, hashPassword, verifyPassword, type AuthResult } from '@/lib/auth';
 
-const ADMIN_ROLES = new Set(['super_admin', 'restaurant_admin', 'admin']);
+const ADMIN_ROLES = new Set(['super_admin']);
 
 export interface PinDeviceContext {
   deviceId: string;

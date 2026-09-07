@@ -13,7 +13,7 @@ import {
   ExternalLink, Download, Copy, Check, ArrowUpRight, Monitor, Tablet, Phone,
   AlertCircle, Info, X, CheckCheck, CircleDot, Reply, Tag, FolderOpen,
   ShieldCheck, ShieldAlert, Ticket, MessageCircle, Sparkles, Power,
-  Loader2, Stethoscope, Gauge, Cpu, HardDrive, Network, LogOut
+  Loader2, Stethoscope, Gauge, Cpu, HardDrive, Network, LogOut, Pencil
 } from 'lucide-react';
 import { vibrate } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts';
@@ -174,12 +174,15 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
   const [orgStatusFilter, setOrgStatusFilter] = useState('all');
   const [selectedOrg, setSelectedOrg] = useState<any>(null);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
+  const [showEditOrg, setShowEditOrg] = useState(false);
+  const [editingOrgId, setEditingOrgId] = useState<string | null>(null);
   const [orgActionLoading, setOrgActionLoading] = useState<string | null>(null);
   const [createOrgForm, setCreateOrgForm] = useState({
     name: '', contactEmail: '', contactPhone: '', taxId: '', address: '',
     branchName: '', branchLocation: '', managerName: '', managerEmail: '', managerPhone: '',
     adminName: '', adminEmail: '', adminPassword: '',
   });
+  const [editOrgForm, setEditOrgForm] = useState({ name: '', contactEmail: '', contactPhone: '', taxId: '', address: '' });
 
   // ===================== USERS STATE =====================
   const [staffSearch, setStaffSearch] = useState('');
@@ -623,6 +626,36 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
     } catch (e: any) { showToast(e.message || 'Network error', 'error'); } finally {
       setOrgActionLoading(null);
       setConfirmModal(null);
+    }
+  };
+
+  const openEditOrg = (org: any) => {
+    setEditingOrgId(org.id);
+    setEditOrgForm({ name: org.name || '', contactEmail: org.contact_email || '', contactPhone: org.contact_phone || '', taxId: org.tax_id || '', address: org.address || '' });
+    setShowEditOrg(true);
+  };
+
+  const handleEditOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrgId || !editOrgForm.name.trim()) { showToast('Restaurant name is required', 'error'); return; }
+    setOrgActionLoading(editingOrgId);
+    try {
+      const res = await fetch(`/api/super-admin/orgs/${editingOrgId}`, {
+        method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(editOrgForm),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setOrgs(prev => prev.map(o => o.id === editingOrgId ? { ...o, ...d.data } : o));
+        setShowEditOrg(false);
+        setEditingOrgId(null);
+        showToast('Restaurant updated successfully');
+      } else {
+        const d = await res.json().catch(() => ({}));
+        showToast(d.error || 'Failed to update restaurant', 'error');
+      }
+    } catch (e: any) { showToast(e.message || 'Network error', 'error'); } finally {
+      setOrgActionLoading(null);
     }
   };
 
@@ -1463,6 +1496,13 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                             <td className="py-4 px-6">
                               <div className="flex items-center gap-2 justify-end">
                                 <button
+                                  onClick={() => openEditOrg(org)}
+                                  className="p-2 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all"
+                                  title="Edit Restaurant"
+                                >
+                                  <Pencil className="w-4 h-4 text-blue-500" />
+                                </button>
+                                <button
                                   onClick={() => setSelectedOrg(selectedOrg?.id === org.id ? null : org)}
                                   className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
                                   title="View Details"
@@ -1646,9 +1686,9 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                                 {s.role?.replace(/_/g, ' ')}
                               </span>
                             </td>
-                            <td className="py-4 px-6 text-xs font-semibold text-slate-500">{s.branch || 'N/A'}</td>
+                            <td className="py-4 px-6 text-xs font-semibold text-slate-500">{s.org_name || 'N/A'}</td>
                             <td className="py-4 px-6"><StatusBadge status={s.status || 'active'} /></td>
-                            <td className="py-4 px-6 text-xs text-slate-500">{formatTimeAgo(s.last_login_at)}</td>
+                            <td className="py-4 px-6 text-xs text-slate-500">{s.last_login_at ? formatTimeAgo(s.last_login_at) : 'Never'}</td>
                             <td className="py-4 px-6">
                               <div className="flex items-center gap-1 justify-end">
                                 <button onClick={() => setSelectedStaff(selectedStaff?.id === s.id ? null : s)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-all" title="View">
@@ -1970,7 +2010,13 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                             <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-2">Device Enrollment Token</p>
                             <p className="font-mono text-xl font-extrabold text-emerald-700 dark:text-emerald-300 tracking-wider select-all break-all">{generatedEnrollmentToken}</p>
                           </div>
-                          <p className="text-xs text-slate-500 text-center">Give this token to the device user. This token expires in 24 hours.</p>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(generatedEnrollmentToken); showToast('Token copied to clipboard!'); }}
+                            className="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-bold text-sm flex items-center justify-center gap-2 hover:bg-emerald-500/20 transition-all"
+                          >
+                            <Copy className="w-4 h-4" /> Copy Token
+                          </button>
+                          <p className="text-xs text-slate-500 text-center">Give this token to the device user. This token expires in 10 minutes.</p>
                           <button
                             onClick={() => {
                               setShowSetupDevice(false);
@@ -3172,6 +3218,51 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
             </motion.div>
           </div>
         )}
+
+        {/* Edit Restaurant Modal */}
+        {showEditOrg && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#121214] rounded-[2.5rem] p-8 max-w-lg w-full border border-black/10 dark:border-white/10 shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Edit Restaurant</h3>
+                <button onClick={() => { setShowEditOrg(false); setEditingOrgId(null); }} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <form onSubmit={handleEditOrg} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Restaurant Name *</label>
+                  <input type="text" required value={editOrgForm.name} onChange={e => setEditOrgForm(p => ({ ...p, name: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Contact Email</label>
+                    <input type="email" value={editOrgForm.contactEmail} onChange={e => setEditOrgForm(p => ({ ...p, contactEmail: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Phone</label>
+                    <input type="tel" value={editOrgForm.contactPhone} onChange={e => setEditOrgForm(p => ({ ...p, contactPhone: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Tax ID</label>
+                    <input type="text" value={editOrgForm.taxId} onChange={e => setEditOrgForm(p => ({ ...p, taxId: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Address</label>
+                    <input type="text" value={editOrgForm.address} onChange={e => setEditOrgForm(p => ({ ...p, address: e.target.value }))} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none" />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => { setShowEditOrg(false); setEditingOrgId(null); }} className="flex-1 py-3 font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+                  <button type="submit" disabled={orgActionLoading === editingOrgId} className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-orange-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {orgActionLoading === editingOrgId ? <><LoadingSpinner size="sm" /> Saving...</> : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
       </AnimatePresence>
 
       {/* ==================== CREATE ADMIN MODAL ==================== */}

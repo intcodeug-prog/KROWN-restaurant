@@ -72,8 +72,14 @@ export function KrownAuthGate() {
     setBusy(true);
     setError('');
     try {
-      if (await tryAdminPin()) return;
       if (!isActivated) {
+        // Try admin PIN bypass (only super_admin can login without device)
+        const adminRes = await fetch('/api/auth/pin-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+        const adminJson = await adminRes.json();
+        if (adminRes.ok && adminJson?.data?.staff && adminJson?.data?.token) {
+          finishLogin(profileFromStaff(adminJson.data.staff), adminJson.data.token, adminJson.data.deviceId);
+          return;
+        }
         setError('This device is not activated. Contact the KROWN team on WhatsApp +256 789 649 710 for access.');
         setMode('activate');
         return;
