@@ -192,7 +192,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
   const [newPin, setNewPin] = useState('');
   const [showResetPassword, setShowResetPassword] = useState<string | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [addUserForm, setAddUserForm] = useState({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' });
+  const [addUserForm, setAddUserForm] = useState({ name: '', email: '', password: '', pin: '', role: 'cashier', organizationId: '', branchId: '' });
   const [addUserBranches, setAddUserBranches] = useState<any[]>([]);
   const [addUserLoading, setAddUserLoading] = useState(false);
 
@@ -318,10 +318,12 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
   const [showSetupDevice, setShowSetupDevice] = useState(false);
   const [setupDeviceForm, setSetupDeviceForm] = useState({
     organizationId: '',
+    branchId: '',
     deviceName: '',
     deviceType: 'pos',
     allowedRoles: ['cashier', 'waiter'],
   });
+  const [setupDeviceBranches, setSetupDeviceBranches] = useState<any[]>([]);
   const [generatedEnrollmentToken, setGeneratedEnrollmentToken] = useState<string | null>(null);
   const [setupDeviceLoading, setSetupDeviceLoading] = useState(false);
 
@@ -334,6 +336,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
         headers: authHeaders(),
         body: JSON.stringify({
           organizationId: setupDeviceForm.organizationId || (orgs[0]?.id || ''),
+          branchId: setupDeviceForm.branchId || undefined,
           deviceName: setupDeviceForm.deviceName,
           deviceType: setupDeviceForm.deviceType,
           allowedRoles: setupDeviceForm.allowedRoles,
@@ -517,6 +520,16 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
     const t = setTimeout(() => fetchDashboardData(), 0);
     return () => clearTimeout(t);
   }, [fetchDashboardData]);
+
+  useEffect(() => {
+    if (setupDeviceForm.organizationId) {
+      const headers = authHeaders();
+      fetch(`/api/super-admin/branches?organizationId=${setupDeviceForm.organizationId}`, { headers })
+        .then(r => r.ok ? r.json() : { data: [] })
+        .then((d: any) => { setSetupDeviceBranches(d?.data || []); setSetupDeviceForm(p => ({ ...p, branchId: '' })); })
+        .catch(() => {});
+    }
+  }, [setupDeviceForm.organizationId]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -726,6 +739,9 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
     if (!addUserForm.organizationId) {
       showToast('Please select a restaurant', 'error'); return;
     }
+    if (addUserForm.pin && (addUserForm.pin.length < 4 || addUserForm.pin.length > 8 || !/^\d+$/.test(addUserForm.pin))) {
+      showToast('PIN must be 4-8 digits', 'error'); return;
+    }
     setAddUserLoading(true);
     try {
       const res = await fetch('/api/super-admin/users', {
@@ -735,6 +751,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
           name: addUserForm.name.trim(),
           email: addUserForm.email.trim(),
           password: addUserForm.password,
+          pin: addUserForm.pin || undefined,
           role: addUserForm.role,
           organizationId: addUserForm.organizationId,
           branchId: addUserForm.branchId || undefined,
@@ -743,7 +760,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
       const d = await res.json();
       if (res.ok) {
         setShowAddUser(false);
-        setAddUserForm({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' });
+        setAddUserForm({ name: '', email: '', password: '', pin: '', role: 'cashier', organizationId: '', branchId: '' });
         showToast('User created successfully!');
         fetchDashboardData();
       } else {
@@ -1734,7 +1751,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#121214] rounded-[2.5rem] p-8 max-w-lg w-full border border-black/10 dark:border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
                       <div className="flex items-center justify-between mb-6">
                         <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Add User</h3>
-                        <button onClick={() => { setShowAddUser(false); setAddUserForm({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' }); }} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"><X className="w-5 h-5 text-slate-400" /></button>
+                        <button onClick={() => { setShowAddUser(false); setAddUserForm({ name: '', email: '', password: '', pin: '', role: 'cashier', organizationId: '', branchId: '' }); }} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5"><X className="w-5 h-5 text-slate-400" /></button>
                       </div>
                       <form onSubmit={handleAddUser} className="space-y-4">
                         <div>
@@ -1748,6 +1765,10 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                         <div>
                           <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Password *</label>
                           <input type="password" required value={addUserForm.password} onChange={e => setAddUserForm(p => ({ ...p, password: e.target.value }))} placeholder="Min 8 characters" className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">PIN (for POS login)</label>
+                          <input type="password" value={addUserForm.pin} onChange={e => setAddUserForm(p => ({ ...p, pin: e.target.value }))} placeholder="4-8 digits (optional)" maxLength={8} className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 tracking-widest text-center" />
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Role *</label>
@@ -1777,7 +1798,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                           </div>
                         )}
                         <div className="flex gap-3 pt-4">
-                          <button type="button" onClick={() => { setShowAddUser(false); setAddUserForm({ name: '', email: '', password: '', role: 'cashier', organizationId: '', branchId: '' }); }} className="flex-1 py-3 font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
+                          <button type="button" onClick={() => { setShowAddUser(false); setAddUserForm({ name: '', email: '', password: '', pin: '', role: 'cashier', organizationId: '', branchId: '' }); }} className="flex-1 py-3 font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancel</button>
                           <button type="submit" disabled={addUserLoading} className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-orange-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
                             {addUserLoading ? <><LoadingSpinner size="sm" /> Creating...</> : 'Create User'}
                           </button>
@@ -1823,11 +1844,12 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                 </select>
                 <select value={deviceTypeFilter} onChange={e => setDeviceTypeFilter(e.target.value)} className="bg-white dark:bg-[#121214] border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 cursor-pointer">
                   <option value="all">All Types</option>
-                  <option value="pos_terminal">POS Terminal</option>
-                  <option value="tablet">Tablet</option>
-                  <option value="mobile">Mobile</option>
-                  <option value="desktop">Desktop</option>
-                  <option value="kitchen_display">Kitchen Display</option>
+                  <option value="pos">POS Terminal</option>
+                  <option value="waiter_tablet">Waiter Tablet</option>
+                  <option value="kitchen">Kitchen Display</option>
+                  <option value="manager_desk">Manager Desk</option>
+                  <option value="admin_desk">Admin Desk</option>
+                  <option value="general">General</option>
                 </select>
               </div>
 
@@ -1965,7 +1987,7 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                             <label className="block text-xs font-bold text-slate-500 mb-1">Target Organization</label>
                             <select
                               value={setupDeviceForm.organizationId}
-                              onChange={e => setSetupDeviceForm({ ...setupDeviceForm, organizationId: e.target.value })}
+                              onChange={e => { const orgId = e.target.value; setSetupDeviceForm({ ...setupDeviceForm, organizationId: orgId, branchId: orgId ? setupDeviceForm.branchId : '' }); if (!orgId) setSetupDeviceBranches([]); }}
                               className="w-full bg-slate-100 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none"
                               required
                             >
@@ -1975,6 +1997,22 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                               ))}
                             </select>
                           </div>
+
+                          {setupDeviceBranches.length > 0 && (
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 mb-1">Branch (optional)</label>
+                              <select
+                                value={setupDeviceForm.branchId}
+                                onChange={e => setSetupDeviceForm({ ...setupDeviceForm, branchId: e.target.value })}
+                                className="w-full bg-slate-100 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none"
+                              >
+                                <option value="">All Branches</option>
+                                {setupDeviceBranches.map((b: any) => (
+                                  <option key={b.id} value={b.id}>{b.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
 
                           <div>
                             <label className="block text-xs font-bold text-slate-500 mb-1">Device Name</label>
@@ -1996,9 +2034,11 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                               className="w-full bg-slate-100 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none"
                             >
                               <option value="pos">POS Terminal</option>
-                              <option value="tablet">Tablet</option>
-                              <option value="mobile">Mobile</option>
-                              <option value="kitchen_display">Kitchen Display</option>
+                              <option value="waiter_tablet">Waiter Tablet</option>
+                              <option value="kitchen">Kitchen Display</option>
+                              <option value="manager_desk">Manager Desk</option>
+                              <option value="admin_desk">Admin Desk</option>
+                              <option value="general">General</option>
                             </select>
                           </div>
 

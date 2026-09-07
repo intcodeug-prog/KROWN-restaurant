@@ -15,7 +15,7 @@ import { useNotification } from '@/hooks/use-notification';
 import { getPrinterConfig, setPrinterConfig, testNetworkPrinter, retryNetworkPrintJob } from '@/lib/printBridge';
 
 export default function CashierDashboard({ setView, activeStaff }: { setView: (v: 'pos' | 'admin' | 'manager' | 'kitchen' | 'cashier') => void; activeStaff?: any }) {
-  const [viewTab, setViewTab] = useState<'orders' | 'tables'>('orders');
+  const [viewTab, setViewTab] = useState<'orders'>('orders');
   const [orders, setOrders] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => activeStaff?.assignedBranchId || '');
@@ -420,18 +420,6 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
             <span className="text-[10px] font-bold tracking-wide">Cashier</span>
           </button>
 
-          <button
-            onClick={() => { vibrate(20); setViewTab('tables'); }}
-            className={`flex flex-col items-center justify-center gap-1.5 w-full py-3 rounded-2xl transition-all duration-300 ${
-              viewTab === 'tables'
-                ? 'text-orange-500 bg-orange-500/10'
-                : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5'
-            }`}
-          >
-            <MapPin className="w-5 h-5 stroke-[2]" />
-            <span className="text-[10px] font-medium tracking-wide">Tables</span>
-          </button>
-
           {isKitchen && (
             <button
               onClick={() => { vibrate(20); setView('kitchen'); }}
@@ -464,10 +452,6 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
 
       {/* Main Cashier Workspace */}
       <main className="flex-1 flex flex-col h-full min-w-0 p-6 lg:p-8 overflow-y-auto custom-scrollbar">
-        {viewTab === 'tables' ? (
-          <TablesView selectedBranchId={selectedBranchId} />
-        ) : (
-          <>
         {/* Top Header & Metrics Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
@@ -650,8 +634,6 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
             </div>
           )}
         </div>
-          </>
-        )}
       </main>
 
       {/* Order Payment & Detail Drawer Modal */}

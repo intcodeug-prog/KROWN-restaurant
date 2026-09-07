@@ -86,10 +86,12 @@ export async function POST(request: NextRequest) {
     if (duplicate.length) return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 });
 
     const passwordHash = await hashPassword(password);
+    const pin = String(body.pin || '').trim();
+    const pinHash = pin && pin.length >= 4 && pin.length <= 8 && /^\d+$/.test(pin) ? await hashPassword(pin) : null;
     const id = generateId();
     const rows = await sql`
-      INSERT INTO staff (id, name, email, phone, role, branch, status, assigned_branch_id, organization_id, password_hash, password_argon2, email_verified, created_at, updated_at)
-      VALUES (${id}, ${name}, ${email}, ${phone}, ${role}, ${branchName}, 'active', ${assignedBranchId}, ${organizationId}, ${passwordHash}, ${passwordHash}, false, NOW(), NOW())
+      INSERT INTO staff (id, name, email, phone, role, branch, status, assigned_branch_id, organization_id, password_hash, password_argon2, pin_code, pin_argon2, email_verified, created_at, updated_at)
+      VALUES (${id}, ${name}, ${email}, ${phone}, ${role}, ${branchName}, 'active', ${assignedBranchId}, ${organizationId}, ${passwordHash}, ${passwordHash}, ${pinHash ? null : null}, ${pinHash}, false, NOW(), NOW())
       RETURNING id, name, email, phone, role, status, assigned_branch_id, organization_id, created_at`;
 
     await logAuditEvent({ organizationId, userId: ctx.userId, userEmail: 'super_admin', actorRole: 'super_admin', action: 'SUPER_ADMIN_USER_CREATE', targetType: 'staff', targetId: id, details: { name, email, role, assignedBranchId } });
