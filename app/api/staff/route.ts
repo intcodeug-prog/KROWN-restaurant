@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     if (branchId) await assertBranchAccess(ctx, branchId);
 
     const normalizedRole = normalizeRole(role);
+    if (normalizedRole === 'super_admin') return NextResponse.json({ data: null, error: 'Cannot create super_admin via staff API' }, { status: 403 });
     const allowed = isPlatformRole(ctx.role) || normalizedRole === 'cashier' || normalizedRole === 'waiter' || normalizedRole === 'kitchen_staff' || (normalizeRole(ctx.role) === 'restaurant_admin' && ['manager', 'cashier', 'waiter', 'kitchen_staff'].includes(normalizedRole));
     if (!allowed) return NextResponse.json({ data: null, error: 'You cannot assign this role' }, { status: 403 });
 
