@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronLeft, Users, Store, Activity, Settings, 
-  Box, Shield, Sun, Moon, UtensilsCrossed, Search, DollarSign, Calendar, Filter, Printer, Download, TrendingUp, CreditCard, Banknote, Smartphone, Building2, LogOut
+  Box, Shield, Sun, Moon, UtensilsCrossed, Search, DollarSign, Calendar, Filter, Printer, Download, TrendingUp, CreditCard, Banknote, Smartphone, Building2, LogOut, HandCoins
 } from 'lucide-react';
 import { vibrate } from '@/lib/utils';
 import ManagerMenu from './manager-menu';
@@ -13,6 +13,7 @@ import ManagerInventory from './manager-inventory';
 import ManagerReceipts from './manager-receipts';
 import ManagerStaff from './manager-staff';
 import ManagerAudit from './manager-audit';
+import PersonalCredits from './personal-credits';
 import AdminCompanies from './admin-companies';
 import AdminZones from './admin-zones';
 import GlobalSearchModal from './global-search-modal';
@@ -20,7 +21,7 @@ import { dataStore } from '@/lib/dataStore';
 import { formatUGX } from '@/lib/mockData';
 
 export default function ManagerPage({ user, setView }: { user: any, setView: (v: 'pos' | 'admin' | 'manager' | 'kitchen') => void }) {
-  const [activeTab, setActiveTab] = useState<'orders' | 'finance' | 'companies' | 'zones' | 'menu' | 'inventory' | 'staff' | 'receipts' | 'audit'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'finance' | 'companies' | 'zones' | 'menu' | 'inventory' | 'staff' | 'receipts' | 'audit' | 'credits'>('orders');
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('krown_theme');
@@ -236,6 +237,7 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
             { id: 'inventory', icon: Box, label: 'Inventory' },
             { id: 'staff', icon: Users, label: 'Staff' },
             { id: 'receipts', icon: Settings, label: 'Receipts & Cashier' },
+            { id: 'credits', icon: HandCoins, label: 'Personal Credits' },
             { id: 'audit', icon: Shield, label: 'Security & Audit Logs' },
           ].map(tab => (
             <button
@@ -437,6 +439,12 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
           {activeTab === 'receipts' && (
             <motion.div key="receipts" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="h-full overflow-y-auto">
               <ManagerReceipts orders={orders} />
+            </motion.div>
+          )}
+
+          {activeTab === 'credits' && (
+            <motion.div key="credits" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="h-full overflow-y-auto">
+              <PersonalCredits branchId={managerBranchId} />
             </motion.div>
           )}
 

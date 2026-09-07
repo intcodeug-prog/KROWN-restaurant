@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronLeft, Users, Store, Activity, Settings, LogOut,
   TrendingUp, Box, Shield, Sun, Moon, UtensilsCrossed, Receipt, CreditCard, Banknote, Smartphone, Percent,
-  Calendar, Filter, Plus, DollarSign, FileText, Upload, Search, Printer, Download
+  Calendar, Filter, Plus, DollarSign, FileText, Upload, Search, Printer, Download, HandCoins
 } from 'lucide-react';
 import { vibrate } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -14,6 +14,7 @@ import ManagerAudit from './manager-audit';
 import AdminBranches from './admin-branches';
 import AdminCompanies from './admin-companies';
 import AdminZones from './admin-zones';
+import PersonalCredits from './personal-credits';
 import GlobalSearchModal from './global-search-modal';
 import { 
   formatUGX, 
@@ -24,7 +25,7 @@ import { dataStore } from '@/lib/dataStore';
 import { uploadImageFile } from '@/lib/imageUpload';
 
 export default function AdminPage({ user, setView }: { user: any, setView: (v: 'pos' | 'admin' | 'manager' | 'kitchen') => void }) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'branches' | 'companies' | 'zones' | 'menu' | 'staff' | 'inventory' | 'finance' | 'audit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'branches' | 'companies' | 'zones' | 'menu' | 'staff' | 'inventory' | 'finance' | 'audit' | 'credits'>('overview');
   // Persistent Branch Selector State
   const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
   const [showSearchModal, setShowSearchModal] = useState<boolean>(false);
@@ -201,6 +202,7 @@ export default function AdminPage({ user, setView }: { user: any, setView: (v: '
             { id: 'staff', icon: Users, label: 'Staff & Managers' },
             { id: 'inventory', icon: Box, label: 'Global Inventory' },
             { id: 'finance', icon: Receipt, label: 'Financial & Tax' },
+            { id: 'credits', icon: HandCoins, label: 'Personal Credits' },
             { id: 'audit', icon: Shield, label: 'Audit & Security' },
           ].map(tab => (
             <button
@@ -522,6 +524,12 @@ export default function AdminPage({ user, setView }: { user: any, setView: (v: '
           {activeTab === 'inventory' && (
             <motion.div key="inventory" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full flex-1">
               <ManagerInventory ingredients={ingredients} user={user} branchId={selectedBranchId === 'all' ? undefined : selectedBranchId} />
+            </motion.div>
+          )}
+
+          {activeTab === 'credits' && (
+            <motion.div key="credits" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full flex-1">
+              <PersonalCredits branchId={selectedBranchId === 'all' ? undefined : selectedBranchId} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -58,13 +58,13 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
   const loadStaff = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/db/staff?orderBy=created_at&orderDir=DESC');
-      const { data } = await res.json();
-      let mapped = (data || []).map(mapDbToStaff);
-      if (currentBranchId && currentBranchId !== 'all') {
-        const b = dataStore.getBranches().find(x => x.id === currentBranchId);
-        mapped = mapped.filter((s: any) => s.role !== 'Super Admin' && (s.assignedBranchId === currentBranchId || s.branch === currentBranchId || (b && s.branch === b.name)));
-      }
+      const branchParam = (currentBranchId && currentBranchId !== 'all') ? `?branchId=${currentBranchId}` : '';
+      const token = typeof window !== 'undefined' ? localStorage.getItem('krown_session_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/staff${branchParam}`, { headers });
+      const json = await res.json();
+      const mapped = (json.data || []).map(mapDbToStaff);
       setStaff(mapped);
       dataStore.syncStaffFromDB(mapped);
     } catch (err) {
@@ -78,7 +78,10 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
   // ── Load branches ─────────────────────────────────────────────────────────
   const loadBranches = useCallback(async () => {
     try {
-      const res = await fetch('/api/db/branches?orderBy=name&orderDir=ASC');
+      const token = typeof window !== 'undefined' ? localStorage.getItem('krown_session_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/branches', { headers });
       const { data } = await res.json();
       if (data && data.length > 0) {
         const mapped: Branch[] = data.map((b: any) => ({
