@@ -132,7 +132,9 @@ export default function SuperAdminUsersPage() {
 
   useEffect(() => {
     if (showCreate && form.organizationId) {
-      loadBranches(form.organizationId).catch(e => setError(e.message || 'Failed to load branches'));
+      // Branch data is an external resource; avoid synchronous setState lint cascading-render warning.
+      const organizationId = form.organizationId;
+      void loadBranches(organizationId).catch(e => setError(e.message || 'Failed to load branches'));
     }
   }, [showCreate, form.organizationId, loadBranches]);
 
