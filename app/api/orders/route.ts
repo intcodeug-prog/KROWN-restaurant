@@ -5,21 +5,24 @@ import { extractVerifiedTenantContext } from '@/lib/tenant';
 import { hasPermission } from '@/lib/rbac';
 import { assertBranchAccess } from '@/lib/access-control';
 
+function normalizePaymentState(order: any) {
+  if (order?.payment_status === 'paid' && Number(order?.paid_amount || 0) <= 0) {
+    return { ...order, payment_status: 'unpaid', status: order.status === 'completed' ? 'pending' : order.status };
+  }
+  return order;
+}
+
 export async function GET(request: NextRequest) {
   const ctx = await extractVerifiedTenantContext(request);
   if (!ctx) return NextResponse.json({ error:'Authentication required' }, { status:401 });
   try {
-    // A branch-scoped user is restricted to their assigned branch. Restaurant
-    // admins/managers without a branch assignment may legitimately list the
-    // organization's orders across branches. Do not turn a missing branch
-    // into a 400 because that makes every reload appear to have lost data.
     const requestedBranchId=request.nextUrl.searchParams.get('branchId')||undefined;
     const branchId=requestedBranchId||ctx.branchId||undefined;
     if (requestedBranchId || ctx.branchId) await assertBranchAccess(ctx,branchId!);
     const startDate=request.nextUrl.searchParams.get('startDate'); const endDate=request.nextUrl.searchParams.get('endDate');
-    let orders=await listOrders(ctx,branchId,startDate?Number(startDate):undefined,endDate?Number(endDate):undefined);
+    const orders=await listOrders(ctx,branchId,startDate?Number(startDate):undefined,endDate?Number(endDate):undefined);
     const limit=Math.min(Math.max(parseInt(request.nextUrl.searchParams.get('limit')||'100',10)||100,1),500);
-    return NextResponse.json({data:orders.slice(0,limit)});
+    return NextResponse.json({data:orders.slice(0,limit).map(normalizePaymentState)});
   }catch(error:any){const status=String(error?.message||'').startsWith('Forbidden')?403:500;return NextResponse.json({error:error?.message||'Failed to list orders'},{status});}
 }
 
@@ -28,8 +31,7 @@ export async function POST(request: NextRequest) {
   if(!ctx)return NextResponse.json({error:'Authentication required'},{status:401});
   if(!hasPermission(ctx.role,'orders:create'))return NextResponse.json({error:'Insufficient permissions'},{status:403});
   try{
-    const body=await request.json();
-    const branchId=body.branchId||body.branch_id||ctx.branchId;
+    const body=await request.json(); const branchId=body.branchId||body.branch_id||ctx.branchId;
     if(!branchId)return NextResponse.json({error:'Branch is required'},{status:400});
     await assertBranchAccess(ctx,branchId);
     const items=(body.items||[]).map((item:any)=>({productId:item.productId||item.product_id,quantity:Number(item.quantity||1),notes:item.notes,addOns:item.addOns||item.add_ons}));
