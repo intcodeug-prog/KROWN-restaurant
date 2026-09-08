@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listIngredients, createIngredient } from '@/lib/services/ingredient.service';
 import { extractTenantContext } from '@/lib/tenant';
 import { hasPermission } from '@/lib/rbac';
+import { assertBranchAccess } from '@/lib/access-control';
 
 export async function GET(request: NextRequest) {
   const ctx = extractTenantContext(request);
@@ -10,7 +11,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const branchId = request.headers.get('x-branch-id') || ctx.branchId || undefined;
+    const branchId = request.nextUrl.searchParams.get('branchId') || ctx.branchId || undefined;
+    if (branchId) await assertBranchAccess(ctx, branchId);
     const ingredients = await listIngredients(ctx, branchId);
     return NextResponse.json({ data: ingredients });
   } catch (error: any) {

@@ -110,9 +110,12 @@ export async function authenticateByPinOnly(
       SELECT id,name,email,role,branch,assigned_branch_id,organization_id,pin_argon2,pin_code,status
       FROM staff
       WHERE status='active'
+        AND lower(role) = 'super_admin'
       ORDER BY id
     `;
-    candidates = candidates.filter((staff: any) => ADMIN_ROLES.has(String(staff.role || '').trim().toLowerCase()));
+    if (!candidates.length) {
+      return { success: false, error: 'Device registration required for PIN login' };
+    }
   }
 
   const matches: any[] = [];

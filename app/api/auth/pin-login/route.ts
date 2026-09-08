@@ -24,15 +24,7 @@ export async function POST(request: NextRequest) {
     // Only super admins can use PIN on any device (no device context needed).
     // All other staff (including restaurant_admin) require a registered device.
     if (!deviceId && !challenge && !signature) {
-      const result = await authenticateByPinOnly(String(pin));
-      if (!result.success || !result.token || !result.staff) {
-        return NextResponse.json({ data: null, error: result.error || 'Authentication failed' }, { status: 401 });
-      }
-      const response = NextResponse.json({
-        data: { token: result.token, staff: result.staff, deviceId: null, branchId: result.staff.assigned_branch_id || null },
-      });
-      setSessionCookie(response, result.token);
-      return response;
+      return NextResponse.json({ data: null, error: 'A registered device is required for PIN login. Please activate a device first.' }, { status: 403 });
     }
 
     if (!deviceId || !challenge || !signature) {

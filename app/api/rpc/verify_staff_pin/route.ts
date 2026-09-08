@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
 
     // Check lockout status (tenant-scoped)
     const lockoutRows = await sql(
-      'SELECT failed_attempts, locked_until FROM staff_pin_lockouts WHERE staff_id = $1',
-      [staff_id]
+      'SELECT failed_attempts, locked_until FROM staff_pin_lockouts WHERE staff_id = $1 AND organization_id = $2',
+      [staff_id, ctx.organizationId]
     );
 
     if (lockoutRows.length > 0) {
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     // PIN is correct — clear lockout
-    await sql('DELETE FROM staff_pin_lockouts WHERE staff_id = $1', [staff_id]);
+    await sql('DELETE FROM staff_pin_lockouts WHERE staff_id = $1 AND organization_id = $2', [staff_id, ctx.organizationId]);
     return NextResponse.json({ data: true });
   } catch (e: any) {
     return NextResponse.json({ data: false, error: e.message }, { status: 500 });
