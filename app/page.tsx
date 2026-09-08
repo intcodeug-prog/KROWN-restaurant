@@ -661,10 +661,12 @@ export default function AppRouter() {
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                     <input
                       type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       maxLength={6}
                       required
                       value={pin}
-                      onChange={(e) => setPin(e.target.value)}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                       placeholder="Enter 4-digit PIN..."
                       className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium tracking-widest text-center text-lg"
                     />

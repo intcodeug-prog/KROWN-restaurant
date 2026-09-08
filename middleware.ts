@@ -14,6 +14,8 @@ const JWT_SECRET = new TextEncoder().encode(configuredSecret);
 const PUBLIC_ROUTES = [
   '/api/auth/login',
   '/api/auth/pin-login',
+  '/api/auth/pin-reset-request',
+  '/api/auth/pin-reset-complete',
   '/api/super-admin/login',
   '/api/auth/refresh',
   '/api/health',

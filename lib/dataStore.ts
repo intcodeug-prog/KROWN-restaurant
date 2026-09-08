@@ -421,17 +421,45 @@ class DataStoreEngine {
   private customCategories: string[] = [];
   private printJobs: PrintJob[] = [];
   private onlineStaffPresence: Array<{ staffId: string; email?: string; branch?: string; assignedBranchId?: string }> = [];
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private lastFetchAt: number = 0;
 
   constructor() {
     this.loadLocal();
     if (typeof window !== 'undefined') {
-      // Only fetch from API if we have a token (user is logged in)
       const token = localStorage.getItem('krown_session_token');
       if (token) {
         this.fetchAll().catch(e => console.warn('[DataStore] init error:', e));
       }
       initAutoSync();
+      this.startPolling();
     }
+  }
+
+  private startPolling() {
+    if (this.pollTimer) return;
+    this.pollTimer = setInterval(async () => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('krown_session_token') : null;
+      if (!token) return;
+      try {
+        await this.refreshOrders();
+        this.lastFetchAt = Date.now();
+      } catch { /* ignore poll errors */ }
+    }, 10000);
+  }
+
+  private async refreshOrders() {
+    try {
+      const safe = async (p: Promise<any>): Promise<{ data: any; ok: boolean }> => {
+        try { const res = await p; return { data: res?.data ?? res ?? [], ok: true }; }
+        catch { return { data: [], ok: false }; }
+      };
+      const ordersRes = await safe(api.orders.list());
+      if (ordersRes.ok && Array.isArray(ordersRes.data)) {
+        this.orders = ordersRes.data.map(fromDbOrder);
+        this.persistLocal();
+      }
+    } catch { /* ignore */ }
   }
 
   // ── Public refresh method — call after login to fetch fresh data from API ──

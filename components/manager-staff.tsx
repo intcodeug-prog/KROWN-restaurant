@@ -621,8 +621,8 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">4-Digit PIN</label>
-                    <input type="text" value={pin} onChange={e => setPin(e.target.value)}
-                      placeholder="1234" maxLength={4}
+                    <input type="password" inputMode="numeric" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="••••" maxLength={4}
                       className="w-full bg-slate-50 dark:bg-black/30 border border-black/10 dark:border-white/10 rounded-xl p-3 text-sm text-slate-900 dark:text-white font-mono" />
                   </div>
                 </div>

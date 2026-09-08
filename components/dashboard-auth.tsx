@@ -267,10 +267,12 @@ export default function DashboardAuth({
                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">4-Digit Quick PIN</label>
                 <input
                   type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={6}
                   required
                   value={pinAttempt}
-                  onChange={e => setPinAttempt(e.target.value)}
+                  onChange={e => setPinAttempt(e.target.value.replace(/\D/g, ''))}
                   placeholder="••••"
                   className="w-full bg-slate-50 dark:bg-black/40 border border-black/10 dark:border-white/10 rounded-2xl py-3.5 px-4 text-slate-900 dark:text-white font-medium text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 text-center tracking-widest text-lg font-mono"
                 />

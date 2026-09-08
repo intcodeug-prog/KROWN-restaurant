@@ -45,13 +45,24 @@ export interface SendEmailOptions {
 export async function sendEmail(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const transport = getTransporter();
+    const from = getEnv('SMTP_FROM', `KROWN POS <${getEnv('SMTP_USER')}>`);
+    const appUrl = getEnv('APP_URL', getEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:5454'));
     const result = await transport.sendMail({
-      from: getEnv('SMTP_FROM', `KROWN POS <${getEnv('SMTP_USER')}>`),
+      from,
       to: options.to,
       subject: options.subject,
       html: options.html,
       text: options.text,
-      replyTo: options.replyTo,
+      replyTo: options.replyTo || getEnv('SMTP_USER'),
+      headers: {
+        'X-Mailer': 'KROWN-POS/1.0',
+        'X-Priority': '3',
+        'Precedence': 'bulk',
+        'List-Unsubscribe': `<${appUrl}/unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        'Feedback-ID': `krown-${Date.now()}`,
+        'X-CMAI-Category': 'transactional',
+      },
     });
     return { success: true, messageId: result.messageId };
   } catch (e: any) {

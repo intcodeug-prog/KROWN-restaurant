@@ -6,17 +6,27 @@ const BRAND_COLOR_DARK = '#ea580c';
 
 function wrap(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0a0a0c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<div style="max-width:480px;margin:40px auto;background:#1a1a1e;border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.08);">
-  <div style="text-align:center;margin-bottom:32px;">
-    <div style="width:56px;height:56px;background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_COLOR_DARK});border-radius:16px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;">
-      <span style="font-size:24px;font-weight:900;color:#fff;">K</span>
-    </div>
-    <h1 style="color:#f4f4f6;font-size:22px;font-weight:700;margin:0;">${title}</h1>
-  </div>
-  ${bodyHtml}
-</div>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
+</head>
+<body style="margin:0;padding:0;background:#0a0a0c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0c;"><tr><td align="center" style="padding:40px 16px;">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#1a1a1e;border-radius:24px;border:1px solid rgba(255,255,255,0.08);">
+  <tr><td align="center" style="padding:40px 40px 32px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td align="center" style="padding-bottom:16px;">
+      <div style="width:56px;height:56px;background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_COLOR_DARK});border-radius:16px;text-align:center;line-height:56px;">
+        <span style="font-size:24px;font-weight:900;color:#fff;vertical-align:middle;">K</span>
+      </div>
+    </td></tr><tr><td align="center">
+      <h1 style="color:#f4f4f6;font-size:22px;font-weight:700;margin:0;line-height:1.3;">${title}</h1>
+    </td></tr></table>
+  </td></tr>
+  <tr><td style="padding:0 40px 40px;">
+    ${bodyHtml}
+  </td></tr>
+</table>
+</td></tr></table>
 </body></html>`;
 }
 
@@ -66,7 +76,7 @@ export function otpEmail(opts: {
   expiresInMinutes: number;
 }): { subject: string; html: string; text: string } {
   const { staffName, code, purpose, expiresInMinutes } = opts;
-  const purposeLabel = purpose === 'email_verify' ? 'Email Verification' : purpose === 'password_reset' ? 'Password Reset' : 'Verification';
+  const purposeLabel = purpose === 'email_verify' ? 'Email Verification' : purpose === 'password_reset' ? 'Password Reset' : purpose === 'pin_reset' ? 'PIN Reset' : 'Verification';
   return {
     subject: `Your ${BRAND_NAME} Verification Code`,
     html: wrap(`${purposeLabel} Code`, `
