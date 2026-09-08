@@ -17,6 +17,7 @@ const PUBLIC_ROUTES = [
   '/api/super-admin/login',
   '/api/auth/refresh',
   '/api/health',
+  '/api/reset-password',
   '/_next',
   '/favicon.ico',
   '/manifest.json',

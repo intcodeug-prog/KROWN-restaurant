@@ -730,18 +730,17 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
   const handleResetPassword = async (staffId: string) => {
     setStaffActionLoading(staffId);
     try {
-      const newPassword = Math.random().toString(36).substring(2, 10) + 'A1!';
-      const res = await fetch(`/api/super-admin/users/${staffId}/reset-password`, {
+      const res = await fetch(`/api/admin/send-reset-email`, {
         method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ password: newPassword }),
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId }),
       });
+      const d = await res.json().catch(() => ({}));
       if (res.ok) {
         setShowResetPassword(null);
-        showToast(`Password reset. New password: ${newPassword}`);
+        showToast(d.message || 'Reset email sent successfully');
       } else {
-        const d = await res.json().catch(() => ({}));
-        showToast(d.error || 'Failed to reset password', 'error');
+        showToast(d.error || 'Failed to send reset email', 'error');
       }
     } catch (e: any) { showToast(e.message || 'Network error', 'error'); } finally {
       setStaffActionLoading(null);
@@ -1720,8 +1719,8 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                                 <button onClick={() => { setShowResetPin(s.id); setNewPin(''); }} className="p-2 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all" title="Reset PIN">
                                   <KeyRound className="w-4 h-4 text-blue-500" />
                                 </button>
-                                <button onClick={() => setShowResetPassword(s.id)} className="p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-all" title="Reset Password">
-                                  <Lock className="w-4 h-4 text-purple-500" />
+                                <button onClick={() => setShowResetPassword(s.id)} className="p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-all" title="Send Reset Email">
+                                  <Mail className="w-4 h-4 text-purple-500" />
                                 </button>
                               </div>
                             </td>
@@ -1767,16 +1766,19 @@ export default function SuperAdminPage({ user, setView, activeStaff, initialTab 
                 {showResetPassword && (
                   <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#121214] rounded-[2.5rem] p-8 max-w-sm w-full border border-black/10 dark:border-white/10 shadow-2xl">
-                      <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Reset Password</h3>
-                      <p className="text-sm text-slate-500 mb-6">A new temporary password will be generated. The staff member will need to use it on next login.</p>
+                      <div className="flex items-center justify-center w-12 h-12 rounded-full bg-purple-500/10 mx-auto mb-4">
+                        <Mail className="w-6 h-6 text-purple-500" />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 text-center">Send Password Reset</h3>
+                      <p className="text-sm text-slate-500 mb-6 text-center">A password reset link will be sent to this staff member&apos;s email address. They can then set their own new password securely.</p>
                       <div className="flex gap-3">
                         <button onClick={() => setShowResetPassword(null)} className="flex-1 py-3 font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white text-sm">Cancel</button>
                         <button
                           onClick={() => handleResetPassword(showResetPassword)}
                           disabled={staffActionLoading === showResetPassword}
-                          className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-orange-500/20 disabled:opacity-50 text-sm"
+                          className="flex-1 bg-purple-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-purple-500/20 disabled:opacity-50 text-sm flex items-center justify-center gap-2"
                         >
-                          {staffActionLoading === showResetPassword ? <LoadingSpinner size="sm" /> : 'Reset Password'}
+                          {staffActionLoading === showResetPassword ? <LoadingSpinner size="sm" /> : <><Mail className="w-4 h-4" /> Send Reset Email</>}
                         </button>
                       </div>
                     </motion.div>

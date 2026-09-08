@@ -37,6 +37,8 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [resetEmailStaff, setResetEmailStaff] = useState<StaffMember | null>(null);
+  const [sendingReset, setSendingReset] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -251,6 +253,28 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
     }
   };
 
+  const handleSendResetEmail = async (staffMember: StaffMember) => {
+    setSendingReset(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('krown_session_token') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/admin/send-reset-email', {
+        method: 'POST', headers,
+        body: JSON.stringify({ staffId: staffMember.id }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast('success', json.message || 'Reset email sent successfully');
+        setResetEmailStaff(null);
+      } else {
+        showToast('error', json.error || 'Failed to send reset email');
+      }
+    } catch (err: any) {
+      showToast('error', err?.message || 'Network error sending reset email');
+    } finally { setSendingReset(false); }
+  };
+
   // ── Role badge styling ────────────────────────────────────────────────────
   // ── Role normalization ─────────────────────────────────────────────────────
   const normalizeRole = (r: string) => {
@@ -429,19 +453,10 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
                 {/* Action Controls */}
                 <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex items-center justify-end gap-2 flex-wrap">
                   <button
-                    onClick={async () => {
-                      const newPass = prompt(`New password for ${u.name} (min 6 chars):`, '');
-                      if (!newPass || newPass.length < 6) {
-                        if (newPass !== null) alert('Password must be at least 6 characters.');
-                        return;
-                      }
-                      const newPin = prompt(`New 4-digit PIN for ${u.name}:`, '1234');
-                      if (newPin === null) return;
-                      handleAction('reset_password', u, { password: newPass.trim(), pin: newPin.trim() });
-                    }}
+                    onClick={() => setResetEmailStaff(u)}
                     className="px-3 py-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl flex items-center gap-1.5 transition-colors"
                   >
-                    <Key className="w-3.5 h-3.5" /> Reset Pass
+                    <Mail className="w-3.5 h-3.5" /> Send Reset
                   </button>
 
                   {u.status !== 'banned' && u.status !== 'paused' && (
@@ -645,6 +660,37 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Send Reset Email Confirmation Modal */}
+      <AnimatePresence>
+        {resetEmailStaff && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#121214] rounded-[2rem] p-6 max-w-sm w-full border border-black/10 dark:border-white/10 shadow-2xl">
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-purple-500/10 mx-auto mb-4">
+                <Mail className="w-6 h-6 text-purple-500" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 text-center">Send Password Reset</h3>
+              <p className="text-sm text-slate-500 mb-6 text-center">
+                A password reset link will be sent to <strong className="text-slate-700 dark:text-slate-300">{resetEmailStaff.email}</strong>. They can then set their own new password securely.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setResetEmailStaff(null)}
+                  className="flex-1 py-3 font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white text-sm transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSendResetEmail(resetEmailStaff)}
+                  disabled={sendingReset}
+                  className="flex-1 bg-purple-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-purple-500/20 disabled:opacity-50 text-sm flex items-center justify-center gap-2 transition-all"
+                >
+                  {sendingReset ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</> : <><Mail className="w-4 h-4" /> Send Reset Email</>}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
