@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractVerifiedTenantContext } from '@/lib/tenant';
-import { getPersonalCreditHistory, recordPersonalCreditPayment, chargePersonalCredit, adjustPersonalCredit, reversePayment, writeOffCredit, cancelCredit, getPersonalCreditProfile } from '@/lib/services/personal-credit.service';
+import { getPersonalCreditHistory, chargePersonalCredit, reversePayment, cancelCredit, getPersonalCreditProfile } from '@/lib/services/personal-credit.service';
+import { recordPersonalCreditPayment, adjustPersonalCredit, writeOffCredit } from '@/lib/services/personal-credit-actions.service';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -25,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const body = await request.json();
 
     if (body.action === 'payment') {
-      const data = await recordPersonalCreditPayment(ctx, id, body.amountUgx, body.description, body.paymentMethod, body.idempotencyKey);
+      const data = await recordPersonalCreditPayment(ctx, id, body.amountUgx, body.description, body.paymentMethod);
       return NextResponse.json({ data });
     }
     if (body.action === 'charge') {
@@ -35,7 +36,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     if (body.action === 'adjust') {
       if (!body.reason?.trim()) return NextResponse.json({ data: null, error: 'reason is required for adjustment' }, { status: 400 });
-      const data = await adjustPersonalCredit(ctx, id, body.amountUgx, body.reason, body.idempotencyKey);
+      const data = await adjustPersonalCredit(ctx, id, body.amountUgx, body.reason);
       return NextResponse.json({ data });
     }
     if (body.action === 'reverse') {
@@ -46,7 +47,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     if (body.action === 'writeoff') {
       if (!body.reason?.trim()) return NextResponse.json({ data: null, error: 'reason is required for write-off' }, { status: 400 });
-      const data = await writeOffCredit(ctx, id, body.reason, body.idempotencyKey);
+      const data = await writeOffCredit(ctx, id, body.reason);
       return NextResponse.json({ data });
     }
     if (body.action === 'cancel') {
