@@ -3,7 +3,6 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { OfflineSyncBanner } from '@/components/offline-sync-banner';
 import { KrownAuthOverlay } from '@/components/krown-auth-overlay';
-import '@/lib/dataStore-hardening';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
