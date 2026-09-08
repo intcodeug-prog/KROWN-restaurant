@@ -297,6 +297,9 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
   const totalRevenueToday = orders
     .filter(o => o.paymentStatus === 'paid' || o.paymentStatus === 'partially_paid')
     .reduce((sum, o) => sum + (o.paidAmount || o.total || 0), 0);
+  const totalMealsSoldToday = orders
+    .filter(o => o.paymentStatus === 'paid' || o.status === 'completed')
+    .reduce((sum, o) => sum + (o.items?.reduce((itemSum: number, item: any) => itemSum + (Number(item.quantity) || 0), 0) || 0), 0);
 
   // Process Full Order Payment Settlement
   const handleCompleteFullPayment = async (order: any) => {
@@ -482,7 +485,7 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-8">
           <div className="bg-white/80 dark:bg-[#121214]/80 backdrop-blur-2xl p-6 rounded-[2rem] border border-black/5 dark:border-white/10 shadow-xl flex items-center justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Unpaid / Open Orders</p>
@@ -490,6 +493,16 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
             </div>
             <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center font-bold">
               <Clock className="w-6 h-6" />
+            </div>
+          </div>
+
+          <div className="bg-white/80 dark:bg-[#121214]/80 backdrop-blur-2xl p-6 rounded-[2rem] border border-black/5 dark:border-white/10 shadow-xl flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Meals Sold Today</p>
+              <h3 className="text-3xl font-black text-orange-500 mt-1">{totalMealsSoldToday} <span className="text-sm font-bold text-slate-400">plates</span></h3>
+            </div>
+            <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center font-bold">
+              <DollarSign className="w-6 h-6" />
             </div>
           </div>
 

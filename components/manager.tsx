@@ -33,7 +33,7 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
   const [showSearchModal, setShowSearchModal] = useState(false);
 
   // Date Filter (start/end range)
-  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | '7days' | '30days' | 'custom'>('all');
+  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | '7days' | '30days' | 'custom'>('today');
   const [dateFrom, setDateFrom] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
@@ -96,6 +96,12 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
     .reduce((sum, o) => sum + (o.total || 0), 0);
   const totalExpenses = expenses.reduce((sum, e) => sum + (e.amountUGX || 0), 0);
   const netProfit = grossSales - totalExpenses;
+  const totalMealsSold = orders
+    .filter(o => o.paymentStatus === 'paid' || o.status === 'completed')
+    .reduce((sum, o) => sum + (o.items?.reduce((itemSum: number, item: any) => itemSum + (Number(item.quantity) || 0), 0) || 0), 0);
+  const totalRevenueFromCompleted = orders
+    .filter(o => o.paymentStatus === 'paid' || o.status === 'completed')
+    .reduce((sum, o) => sum + (o.total || 0), 0);
   const paymentBreakdown = dataStore.getPaymentBreakdown(orders);
 
   // Print PDF Finance Report
@@ -358,7 +364,7 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
               </div>
 
               {/* Financial KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-gradient-to-br from-orange-500 to-amber-500 rounded-[2.5rem] p-6 text-white shadow-2xl shadow-orange-500/20">
                   <div className="flex items-center gap-2 text-white/80 mb-2">
                     <TrendingUp className="w-5 h-5" />
@@ -366,6 +372,15 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
                   </div>
                   <h3 className="text-3xl font-extrabold">{formatUGX(grossSales)}</h3>
                   <p className="text-xs text-white/80 mt-2 font-medium">Orders Count: {orders.filter(o => o.paymentStatus === 'paid' || o.status === 'completed').length}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-amber-600 to-orange-600 rounded-[2.5rem] p-6 text-white shadow-2xl shadow-amber-500/20">
+                  <div className="flex items-center gap-2 text-white/80 mb-2">
+                    <UtensilsCrossed className="w-5 h-5" />
+                    <span className="font-bold text-xs uppercase tracking-wider">Meals Sold</span>
+                  </div>
+                  <h3 className="text-3xl font-extrabold">{totalMealsSold}</h3>
+                  <p className="text-xs text-white/80 mt-2 font-medium">plates served this period</p>
                 </div>
 
                 <div className="bg-white/80 dark:bg-[#121214]/80 backdrop-blur-2xl border border-black/5 dark:border-white/10 rounded-[2.5rem] p-6 shadow-xl">

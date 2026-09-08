@@ -8,6 +8,7 @@ import {
   AlertTriangle, DollarSign, Users, FileText, Download, RefreshCw, Wallet
 } from 'lucide-react';
 import { formatUGX } from '@/lib/mockData';
+import { dataStore } from '@/lib/dataStore';
 
 type ViewMode = 'dashboard' | 'profiles' | 'detail';
 
@@ -53,6 +54,7 @@ export default function PersonalCredits({ branchId }: { branchId?: string }) {
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
   const [ledger, setLedger] = useState<any[]>([]);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -136,12 +138,17 @@ export default function PersonalCredits({ branchId }: { branchId?: string }) {
           const res = await fetch(`/api/personal-credit?view=dashboard&${params}`, { headers: authHeaders() });
           const json = await res.json();
           if (!cancelled && json.data) setDashboard(json.data);
-        } catch { /* ignore */ }
+        } catch (err: any) { setError(err?.message || 'Failed to load dashboard'); }
         if (!cancelled) setLoading(false);
       }
       if (view === 'profiles') {
+        let actualBranchId = branchId;
+        if (!actualBranchId) {
+          const branches = dataStore.getBranches();
+          if (branches.length > 0) { actualBranchId = branches[0].id; }
+        }
         const params = new URLSearchParams({ view: 'list', page: String(page), limit: '20' });
-        if (branchId) params.set('branchId', branchId);
+        if (actualBranchId) params.set('branchId', actualBranchId);
         if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter);
         if (search) params.set('search', search);
         try {
@@ -151,7 +158,7 @@ export default function PersonalCredits({ branchId }: { branchId?: string }) {
             setProfiles(json.data.profiles || []);
             setTotalProfiles(json.data.total || 0);
           }
-        } catch { /* ignore */ }
+        } catch (err: any) { setError(err?.message || 'Failed to load data'); }
         if (!cancelled) setLoading(false);
       }
     }
@@ -189,7 +196,7 @@ export default function PersonalCredits({ branchId }: { branchId?: string }) {
       const res = await fetch(`/api/personal-credit/${selectedProfile.id}`, {
         method: 'PATCH',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'payment', amount: Number(paymentAmount), description: paymentDesc || undefined })
+        body: JSON.stringify({ action: 'payment', amountUgx: Number(paymentAmount), description: paymentDesc || undefined })
       });
       const json = await res.json();
       if (json.error) throw new Error(json.error);
@@ -213,7 +220,7 @@ export default function PersonalCredits({ branchId }: { branchId?: string }) {
       const res = await fetch(`/api/personal-credit/${selectedProfile.id}`, {
         method: 'PATCH',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'adjust', amount: Number(adjustAmount), reason: adjustReason })
+        body: JSON.stringify({ action: 'adjust', amountUgx: Number(adjustAmount), reason: adjustReason })
       });
       const json = await res.json();
       if (json.error) throw new Error(json.error);
@@ -459,6 +466,11 @@ export default function PersonalCredits({ branchId }: { branchId?: string }) {
 
         {loading ? (
           <div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 text-orange-500 animate-spin" /></div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center"><AlertCircle className="w-8 h-8 text-red-500" /></div>
+            <div><p className="font-bold text-red-600 dark:text-red-400">Error Loading Data</p><p className="text-slate-500 text-sm mt-1">{error}</p></div>
+          </div>
         ) : profiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-white/5 flex items-center justify-center"><HandCoins className="w-8 h-8 text-slate-400" /></div>

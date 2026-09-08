@@ -67,7 +67,8 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
       const res = await fetch(`/api/staff${branchParam}`, { headers });
       const json = await res.json();
       const mapped = (json.data || []).map(mapDbToStaff);
-      setStaff(mapped);
+      const filteredStaff: StaffMember[] = mapped.filter((s: StaffMember) => !['super_admin', 'restaurant_admin', 'Super Admin', 'Restaurant Admin'].includes(s.role));
+      setStaff(filteredStaff);
       dataStore.syncStaffFromDB(mapped);
     } catch (err) {
       console.error('[ManagerStaff] Load error:', err);
@@ -452,13 +453,6 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
 
                 {/* Action Controls */}
                 <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex items-center justify-end gap-2 flex-wrap">
-                  <button
-                    onClick={() => setResetEmailStaff(u)}
-                    className="px-3 py-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl flex items-center gap-1.5 transition-colors"
-                  >
-                    <Mail className="w-3.5 h-3.5" /> Send Reset
-                  </button>
-
                   {u.status !== 'banned' && u.status !== 'paused' && (
                     <button
                       onClick={() => handleAction('update_status', u, { status: 'paused' })}
@@ -493,17 +487,7 @@ export default function ManagerStaff({ currentBranchId }: { currentBranchId?: st
                     </button>
                   )}
 
-                  <button
-                    onClick={() => {
-                      if (confirm(`Remove staff member "${u.name}" from the system?`)) {
-                        handleAction('delete', u);
-                      }
-                    }}
-                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors"
-                    title="Delete Staff Member"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+
                 </div>
               </div>
             ))}

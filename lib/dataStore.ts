@@ -455,7 +455,7 @@ class DataStoreEngine {
     try {
       const safe = async (p: Promise<any>): Promise<{ data: any; ok: boolean }> => {
         try { const res = await p; return { data: res?.data ?? res ?? [], ok: true }; }
-        catch { return { data: [], ok: false }; }
+        catch (e) { console.warn('[DataStore] refreshOrders API error:', e); return { data: [], ok: false }; }
       };
       const ordersRes = await safe(api.orders.list(undefined, undefined, undefined, 500));
       if (ordersRes.ok && Array.isArray(ordersRes.data)) {
@@ -467,7 +467,7 @@ class DataStoreEngine {
         this.orders = [...localOnlyOrders, ...dbOrders];
         this.persistLocal();
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.warn('[DataStore] refreshOrders error:', e); }
   }
 
   // ── Public refresh method — call after login to fetch fresh data from API ──
@@ -681,8 +681,7 @@ class DataStoreEngine {
   public getOrders(branchId?: string, startDate?: number, endDate?: number): Order[] {
     let res = this.orders;
     if (branchId && branchId !== 'all') {
-      const b = this.branches.find(x => x.id === branchId);
-      res = res.filter(o => o.restaurantId === branchId || (b && o.branchName === b.name));
+      res = res.filter(o => o.restaurantId === branchId);
     }
     if (startDate) res = res.filter(o => o.createdAt >= startDate);
     if (endDate) res = res.filter(o => o.createdAt <= endDate);

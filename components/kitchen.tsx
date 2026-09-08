@@ -11,6 +11,7 @@ import { dataStore } from '@/lib/dataStore';
 
 export default function KitchenPage({ setView, activeStaff }: { setView: (v: 'pos' | 'admin' | 'manager' | 'kitchen' | 'cashier') => void; activeStaff?: any }) {
   const [orders, setOrders] = useState<any[]>([]);
+  const [completedTodayCount, setCompletedTodayCount] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const { notify } = useNotification();
   const autoPrinted = useRef(new Set());
@@ -30,11 +31,15 @@ export default function KitchenPage({ setView, activeStaff }: { setView: (v: 'po
     const printedRef = autoPrinted.current;
 
     const syncOrders = () => {
+      const twentyFourHoursAgoMs = Date.now() - 24 * 60 * 60 * 1000;
+      const live = dataStore.getOrders(activeBranchId, twentyFourHoursAgoMs).filter(o => o.status === 'pending' || o.status === 'preparing');
+      setOrders(live);
+
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
-      const startOfTodayMs = startOfToday.getTime();
-      const live = dataStore.getOrders(activeBranchId, startOfTodayMs).filter(o => o.status === 'pending' || o.status === 'preparing');
-      setOrders(live);
+      const allToday = dataStore.getOrders(activeBranchId, startOfToday.getTime());
+      setCompletedTodayCount(allToday.filter(o => o.status === 'completed' || o.status === 'ready').length);
+
       const fresh = live.filter(o => !printedRef.has(o.id));
       fresh.forEach(o => {
         printedRef.add(o.id);
@@ -84,6 +89,27 @@ export default function KitchenPage({ setView, activeStaff }: { setView: (v: 'po
           <LogOut className="w-5 h-5" />
         </button>
       </header>
+
+      <div className="flex gap-4 mb-6">
+        <div className="bg-white/80 dark:bg-[#121214]/80 backdrop-blur-2xl border border-black/5 dark:border-white/10 rounded-2xl px-5 py-3 flex items-center gap-3 shadow-sm">
+          <div className="w-8 h-8 bg-green-500/10 text-green-500 rounded-xl flex items-center justify-center">
+            <CheckCircle className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prepared Today</p>
+            <p className="text-lg font-black text-slate-900 dark:text-white">{completedTodayCount} <span className="text-xs font-bold text-slate-400">meals</span></p>
+          </div>
+        </div>
+        <div className="bg-white/80 dark:bg-[#121214]/80 backdrop-blur-2xl border border-black/5 dark:border-white/10 rounded-2xl px-5 py-3 flex items-center gap-3 shadow-sm">
+          <div className="w-8 h-8 bg-orange-500/10 text-orange-500 rounded-xl flex items-center justify-center">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pending</p>
+            <p className="text-lg font-black text-orange-500">{orders.length} <span className="text-xs font-bold text-slate-400">orders</span></p>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-start">
         <AnimatePresence>
