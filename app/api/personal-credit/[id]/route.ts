@@ -7,11 +7,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const ctx = await extractVerifiedTenantContext(request);
     if (!ctx) return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
     const { id } = await params;
-    const data = await getPersonalCreditHistory(ctx, id);
+    const view = new URL(request.url).searchParams.get('view');
+    const data = view === 'history' ? await getPersonalCreditHistory(ctx, id) : await getPersonalCreditProfile(ctx, id);
     if (!data) return NextResponse.json({ data: null, error: 'Credit profile not found' }, { status: 404 });
     return NextResponse.json({ data });
   } catch (e: any) {
-    const message = e?.message || 'Unable to load credit history';
+    const message = e?.message || 'Unable to load credit profile';
     return NextResponse.json({ data: null, error: message }, { status: /restricted|Forbidden/i.test(message) ? 403 : 400 });
   }
 }
