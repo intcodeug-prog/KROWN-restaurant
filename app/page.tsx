@@ -23,15 +23,32 @@ import {
   isOffline
 } from '@/lib/offlineAuth';
 
+/**
+ * Normalize DB role names (snake_case) to display role names (Title Case).
+ * DB stores: super_admin, branch_manager, cashier, senior_waiter, head_chef, kitchen_staff
+ * UI expects: Super Admin, Branch Manager, Cashier, Senior Waiter, Head Chef, Kitchen Staff
+ */
 function normalizeRole(role: string | null | undefined): StaffMember['role'] {
   if (!role) return 'Cashier';
   const map: Record<string, StaffMember['role']> = {
-    super_admin: 'Super Admin', admin: 'Super Admin', restaurant_admin: 'Restaurant Admin',
-    branch_manager: 'Branch Manager', manager: 'Branch Manager', cashier: 'Cashier',
-    senior_waiter: 'Senior Waiter', waiter: 'Senior Waiter', head_chef: 'Head Chef',
-    chef: 'Head Chef', kitchen_staff: 'Kitchen Staff', 'Super Admin': 'Super Admin',
-    'Restaurant Admin': 'Restaurant Admin', 'Branch Manager': 'Branch Manager',
-    'Cashier': 'Cashier', 'Senior Waiter': 'Senior Waiter', 'Head Chef': 'Head Chef', 'Kitchen Staff': 'Kitchen Staff',
+    super_admin: 'Super Admin',
+    admin: 'Super Admin',
+    restaurant_admin: 'Restaurant Admin',
+    branch_manager: 'Branch Manager',
+    manager: 'Branch Manager',
+    cashier: 'Cashier',
+    senior_waiter: 'Senior Waiter',
+    waiter: 'Senior Waiter',
+    head_chef: 'Head Chef',
+    chef: 'Head Chef',
+    kitchen_staff: 'Kitchen Staff',
+    'Super Admin': 'Super Admin',
+    'Restaurant Admin': 'Restaurant Admin',
+    'Branch Manager': 'Branch Manager',
+    'Cashier': 'Cashier',
+    'Senior Waiter': 'Senior Waiter',
+    'Head Chef': 'Head Chef',
+    'Kitchen Staff': 'Kitchen Staff',
   };
   return map[role] ?? map[role.toLowerCase()] ?? 'Cashier';
 }
@@ -62,11 +79,13 @@ export default function AppRouter() {
           });
         }
       }
-    } catch {}
+    } catch { /* ignore corrupted cache */ }
     startTransition(() => setLoading(false));
   }, []);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [pendingView, setPendingView] = useState<'pos' | 'admin' | 'manager' | 'kitchen' | 'cashier' | null>(null);
+
+  // Auth Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
@@ -75,8 +94,16 @@ export default function AppRouter() {
   const [loginError, setLoginError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!activeStaff) { dataStore.setOnlineStaffPresence([]); return; }
-    dataStore.setOnlineStaffPresence([{ staffId: activeStaff.id, email: activeStaff.email, branch: activeStaff.branch, assignedBranchId: activeStaff.assignedBranchId }]);
+    if (!activeStaff) {
+      dataStore.setOnlineStaffPresence([]);
+      return;
+    }
+    dataStore.setOnlineStaffPresence([{
+      staffId: activeStaff.id,
+      email: activeStaff.email,
+      branch: activeStaff.branch,
+      assignedBranchId: activeStaff.assignedBranchId,
+    }]);
   }, [activeStaff]);
 
   useEffect(() => {
@@ -87,20 +114,31 @@ export default function AppRouter() {
     }
     const controller = new AbortController();
     const apiTimeout = setTimeout(() => controller.abort(), 5000);
-    fetch('/api/auth/session', { headers: { Authorization: `Bearer ${localStorage.getItem('krown_session_token') || ''}` }, signal: controller.signal })
-      .then(r => r.json()).then(json => {
+    fetch('/api/auth/session', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('krown_session_token') || ''}` },
+      signal: controller.signal,
+    })
+      .then(r => r.json())
+      .then(json => {
         const authUser = json?.session?.user;
         if (!authUser) {
           if (!didLoginRef.current) {
-            localStorage.removeItem('krown_session_token'); sessionStorage.removeItem('krown_active_session'); localStorage.removeItem('krown_staff_profile');
-            setActiveStaff(null); setUser(null);
+            localStorage.removeItem('krown_session_token');
+            sessionStorage.removeItem('krown_active_session');
+            localStorage.removeItem('krown_staff_profile');
+            setActiveStaff(null);
+            setUser(null);
           }
           return;
         }
         const staff: StaffMember = {
-          id: authUser.id, name: authUser.name || authUser.email?.split('@')[0] || 'Staff', email: authUser.email,
-          role: normalizeRole(authUser.role), branch: authUser.branch || authUser.branch_name || 'Global HQ',
-          assignedBranchId: authUser.assigned_branch_id || null, status: authUser.status || 'active',
+          id: authUser.id,
+          name: authUser.name || authUser.email?.split('@')[0] || 'Staff',
+          email: authUser.email,
+          role: normalizeRole(authUser.role),
+          branch: authUser.branch || authUser.branch_name || 'Global HQ',
+          assignedBranchId: authUser.assigned_branch_id || null,
+          status: authUser.status || 'active',
           avatar: authUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(authUser.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200`,
         };
         localStorage.setItem('krown_staff_profile', JSON.stringify(staff));
@@ -110,17 +148,36 @@ export default function AppRouter() {
         else if (staff.role === 'Restaurant Admin') setView('admin');
         else if (staff.role === 'Branch Manager') setView('manager');
         else if (staff.role === 'Cashier') setView('cashier');
-        else if (staff.role === 'Head Chef' || staff.role === 'Kitchen Staff') setView('kitchen'); else setView('pos');
-      }).catch(() => {}).finally(() => { clearTimeout(apiTimeout); setLoading(false); dataStore.refresh().catch(() => {}); });
-    return () => { controller.abort(); clearTimeout(apiTimeout); };
+        else if (staff.role === 'Head Chef' || staff.role === 'Kitchen Staff') setView('kitchen');
+        else setView('pos');
+      })
+      .catch(() => {})
+      .finally(() => {
+        clearTimeout(apiTimeout);
+        setLoading(false);
+        dataStore.refresh().catch(() => {});
+      });
+    return () => {
+      controller.abort();
+      clearTimeout(apiTimeout);
+    };
   }, []);
 
   const handleNavigateWithAuth = (targetView: 'pos' | 'admin' | 'manager' | 'kitchen' | 'cashier' | 'super_admin') => {
     const role = activeStaff?.role;
     if (role === 'Super Admin') { setView(targetView); return; }
-    if (role === 'Restaurant Admin') { if (targetView !== 'admin') { alert('Access Denied: Restaurant Admin accounts can only access the Admin Panel.'); return; } setView(targetView); return; }
-    if (role === 'Branch Manager') { if (targetView === 'admin') { alert('Access Denied: Branch Managers cannot access Super Admin Global HQ Settings.'); return; } setView(targetView); return; }
-    if (role === 'Cashier') { if (targetView === 'admin' || targetView === 'manager') { alert('Access Denied: Cashier accounts cannot access Manager or Admin dashboards.'); return; } setView(targetView); return; }
+    if (role === 'Restaurant Admin') {
+      if (targetView !== 'admin') { alert('Access Denied: Restaurant Admin accounts can only access the Admin Panel.'); return; }
+      setView(targetView); return;
+    }
+    if (role === 'Branch Manager') {
+      if (targetView === 'admin') { alert('Access Denied: Branch Managers cannot access Super Admin Global HQ Settings.'); return; }
+      setView(targetView); return;
+    }
+    if (role === 'Cashier') {
+      if (targetView === 'admin' || targetView === 'manager') { alert('Access Denied: Cashier accounts cannot access Manager or Admin dashboards.'); return; }
+      setView(targetView); return;
+    }
     if (role === 'Senior Waiter' && targetView !== 'pos') { alert('Access Denied: POS Waiter accounts are restricted to POS view.'); return; }
     if ((role === 'Head Chef' || role === 'Kitchen Staff') && targetView !== 'kitchen') { alert('Access Denied: Kitchen staff accounts are restricted to Kitchen Display.'); return; }
     setView(targetView);
@@ -128,7 +185,7 @@ export default function AppRouter() {
 
   const handlePinLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) { setLoginError('Please enter your staff email address for PIN login.'); return; }
+    if (!email || email.trim() === '') { setLoginError('Please enter your staff email address for PIN login.'); return; }
     if (!pin || pin.length < 4) { setLoginError('Please enter your 4-digit PIN code.'); return; }
     setIsSubmitting(true); setLoginError(null);
     const cleanEmail = email.trim().toLowerCase(); let foundStaff: StaffMember | undefined;
@@ -136,26 +193,32 @@ export default function AppRouter() {
       const res = await fetch('/api/auth/pin-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: cleanEmail, pin }) });
       const json = await res.json();
       if (res.ok && json?.data?.staff) {
-        const s = json.data.staff; if (json.data.token) localStorage.setItem('krown_session_token', json.data.token);
+        const s = json.data.staff;
+        if (json.data.token) localStorage.setItem('krown_session_token', json.data.token);
         foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` };
       } else if (!navigator.onLine) {
         const offlineEntry = await verifyOfflineCredentials(cleanEmail, pin);
-        if (offlineEntry?.staff) { const s = offlineEntry.staff; foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` }; }
-        else { setLoginError('OFFLINE MODE: No cached credentials. Connect to the internet once to cache your login.'); setIsSubmitting(false); return; }
-      } else { const msg = json?.error || 'Invalid email or PIN'; setLoginError(msg.includes('locked') ? `🔒 ${msg}` : msg); setIsSubmitting(false); return; }
+        if (offlineEntry?.staff) {
+          const s = offlineEntry.staff;
+          foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` };
+        } else { setLoginError('OFFLINE MODE: No cached credentials. Connect to the internet once to cache your login.'); setIsSubmitting(false); return; }
+      } else {
+        const msg = json?.error || 'Invalid email or PIN'; setLoginError(msg.includes('locked') ? `\uD83D\uDD12 ${msg}` : msg); setIsSubmitting(false); return;
+      }
     } catch (err: any) {
       const offlineEntry = await verifyOfflineCredentials(cleanEmail, pin);
       if (offlineEntry?.staff) { const s = offlineEntry.staff; foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` }; }
       else { setLoginError('Login error: ' + (err.message || 'Network unavailable')); setIsSubmitting(false); return; }
     }
-    if (!foundStaff) { setIsSubmitting(false); return; }
-    if (foundStaff.status === 'banned') { setLoginError('Access Denied: This account is BANNED.'); setIsSubmitting(false); return; }
-    if (foundStaff.status === 'paused') { setLoginError('Account On Hold: Your account is currently paused.'); setIsSubmitting(false); return; }
-    didLoginRef.current = true;
-    setUser({ uid: foundStaff.id, displayName: foundStaff.name, email: foundStaff.email, photoURL: foundStaff.avatar, assignedBranchId: foundStaff.assignedBranchId });
-    setActiveStaff(foundStaff); localStorage.setItem('krown_staff_profile', JSON.stringify(foundStaff)); sessionStorage.setItem('krown_active_session', 'true');
-    if (foundStaff.role === 'Super Admin') setView('super_admin'); else if (foundStaff.role === 'Restaurant Admin') setView('admin'); else if (foundStaff.role === 'Branch Manager') setView('manager'); else if (foundStaff.role === 'Cashier') setView('cashier'); else if (foundStaff.role === 'Head Chef' || foundStaff.role === 'Kitchen Staff') setView('kitchen'); else setView('pos');
-    setEmail(''); setPassword(''); setPin(''); setIsSubmitting(false); requestAnimationFrame(() => dataStore.refresh().catch(() => {}));
+    if (foundStaff) {
+      if (foundStaff.status === 'banned') { setLoginError('Access Denied: This account is BANNED.'); setIsSubmitting(false); return; }
+      if (foundStaff.status === 'paused') { setLoginError('Account On Hold: Your account is currently paused.'); setIsSubmitting(false); return; }
+      didLoginRef.current = true;
+      setUser({ uid: foundStaff.id, displayName: foundStaff.name, email: foundStaff.email, photoURL: foundStaff.avatar, assignedBranchId: foundStaff.assignedBranchId });
+      setActiveStaff(foundStaff); localStorage.setItem('krown_staff_profile', JSON.stringify(foundStaff)); if (typeof window !== 'undefined') sessionStorage.setItem('krown_active_session', 'true');
+      if (foundStaff.role === 'Super Admin') setView('super_admin'); else if (foundStaff.role === 'Restaurant Admin') setView('admin'); else if (foundStaff.role === 'Branch Manager') setView('manager'); else if (foundStaff.role === 'Cashier') setView('cashier'); else if (foundStaff.role === 'Head Chef' || foundStaff.role === 'Kitchen Staff') setView('kitchen'); else setView('pos');
+      setEmail(''); setPassword(''); setPin(''); setIsSubmitting(false); requestAnimationFrame(() => { dataStore.refresh().catch(() => {}); });
+    } else setIsSubmitting(false);
   };
 
   const handleStaffLogin = async (e: React.FormEvent) => {
@@ -166,27 +229,38 @@ export default function AppRouter() {
     const cleanEmail = email.trim().toLowerCase(); let foundStaff: StaffMember | undefined; let authData: any = null; let authError: any = null;
     try {
       const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: cleanEmail, password }) });
-      const json = await res.json(); if (!res.ok || !json?.data?.staff) authError = { message: json?.error || 'Login failed' }; else { authData = json.data; if (authData?.token) localStorage.setItem('krown_session_token', authData.token); }
+      const json = await res.json();
+      if (!res.ok || !json?.data?.staff) authError = { message: json?.error || 'Login failed' }; else { authData = json.data; if (authData?.token) localStorage.setItem('krown_session_token', authData.token); }
     } catch (e: any) { authError = e; }
     if (authError) {
       const offlineEntry = await verifyOfflineCredentials(cleanEmail, password);
-      if (offlineEntry?.staff) { const s = offlineEntry.staff; foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` }; }
+      if (offlineEntry && offlineEntry.staff) { const s = offlineEntry.staff; foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` }; }
       else if (authError.message?.toLowerCase().includes('failed to fetch') || authError.message?.toLowerCase().includes('network') || isOffline()) setLoginError('OFFLINE MODE: No internet detected and no cached login for this account. Connect to the internet once to cache credentials.');
-      else if (authError.message?.toLowerCase().includes('invalid login credentials') || authError.message?.toLowerCase().includes('invalid_credentials') || authError.message?.toLowerCase().includes('invalid email or password')) setLoginError('Wrong email or password. Please try again.');
-      else if (authError.message?.toLowerCase().includes('email not confirmed')) setLoginError('Please confirm your email address before logging in.');
-      else if (authError.message?.toLowerCase().includes('too many requests')) setLoginError('Too many login attempts. Please wait a few minutes.');
+      else if (authError.message.toLowerCase().includes('invalid login credentials') || authError.message.toLowerCase().includes('invalid_credentials') || authError.message.toLowerCase().includes('invalid email or password')) setLoginError('Wrong email or password. Please try again.');
+      else if (authError.message.toLowerCase().includes('email not confirmed')) setLoginError('Please confirm your email address before logging in.');
+      else if (authError.message.toLowerCase().includes('too many requests')) setLoginError('Too many login attempts. Please wait a few minutes.');
       else setLoginError(`Login error: ${authError.message}`);
       setIsSubmitting(false); return;
     }
-    if (authData?.staff) { const s = authData.staff; foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` }; }
+    if (authData?.staff) {
+      const s = authData.staff;
+      foundStaff = { id: s.id, name: s.name || cleanEmail.split('@')[0], email: s.email || cleanEmail, role: normalizeRole(s.role), branch: s.branch || 'Global HQ', assignedBranchId: s.assigned_branch_id || null, status: s.status || 'active', avatar: s.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` };
+    } else if (authData?.user) {
+      const authUid = authData.user.id; const authEmail = authData.user.email?.toLowerCase() || cleanEmail; let dbStaff: any = null;
+      try { const res = await fetch(`/api/db/staff?where=${encodeURIComponent(JSON.stringify({ id: authUid }))}&limit=1`); const { data } = await res.json(); if (data?.length) dbStaff = data[0]; } catch {}
+      if (!dbStaff) { try { const res = await fetch(`/api/db/staff?where=${encodeURIComponent(JSON.stringify({ email: authEmail }))}&limit=1`); const { data } = await res.json(); if (data?.length) dbStaff = data[0]; } catch {} }
+      if (dbStaff) foundStaff = { id: dbStaff.id, name: dbStaff.name || authEmail.split('@')[0], email: dbStaff.email || authEmail, role: normalizeRole(dbStaff.role), branch: dbStaff.branch || 'Global HQ', assignedBranchId: dbStaff.assigned_branch_id || null, status: dbStaff.status || 'active', avatar: dbStaff.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(dbStaff.name || 'Staff')}&background=f97316&color=fff&bold=true&size=200` };
+    }
     if (foundStaff) {
       if (foundStaff.status === 'banned') { setLoginError('Access Denied: This staff account is BANNED by Admin.'); fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); localStorage.removeItem('krown_staff_profile'); setIsSubmitting(false); return; }
       if (foundStaff.status === 'paused') { setLoginError('Account On Hold: Your shift account is currently paused.'); fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); localStorage.removeItem('krown_staff_profile'); setIsSubmitting(false); return; }
-      didLoginRef.current = true; setUser({ uid: foundStaff.id, displayName: foundStaff.name, email: foundStaff.email, photoURL: foundStaff.avatar, assignedBranchId: foundStaff.assignedBranchId });
-      sessionStorage.setItem('krown_active_session', 'true'); setActiveStaff(foundStaff); localStorage.setItem('krown_staff_profile', JSON.stringify(foundStaff));
+      didLoginRef.current = true;
+      setUser({ uid: foundStaff.id, displayName: foundStaff.name, email: foundStaff.email, photoURL: foundStaff.avatar, assignedBranchId: foundStaff.assignedBranchId });
+      if (typeof window !== 'undefined') sessionStorage.setItem('krown_active_session', 'true');
+      setActiveStaff(foundStaff); localStorage.setItem('krown_staff_profile', JSON.stringify(foundStaff));
       try { await storeOfflinePasswordHash(cleanEmail, password); await cacheOfflineAuth(foundStaff); } catch {}
       if (foundStaff.role === 'Super Admin') setView('super_admin'); else if (foundStaff.role === 'Restaurant Admin') setView('admin'); else if (foundStaff.role === 'Branch Manager') setView('manager'); else if (foundStaff.role === 'Cashier') setView('cashier'); else if (foundStaff.role === 'Head Chef' || foundStaff.role === 'Kitchen Staff') setView('kitchen'); else setView('pos');
-      setEmail(''); setPassword(''); setPin(''); setIsSubmitting(false); requestAnimationFrame(() => dataStore.refresh().catch(() => {})); return;
+      setEmail(''); setPassword(''); setPin(''); setIsSubmitting(false); requestAnimationFrame(() => { dataStore.refresh().catch(() => {}); }); return;
     }
     setLoginError('Login failed. Account not found.'); setIsSubmitting(false);
   };
@@ -205,11 +279,16 @@ export default function AppRouter() {
           <button type="button" onClick={() => { setLoginMode('pin'); setLoginError(null); }} className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all ${loginMode === 'pin' ? 'bg-white dark:bg-[#1A1A1E] text-slate-900 dark:text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}>🔑 Staff PIN Code</button>
         </div>
         <form onSubmit={handleStaffLogin} className="space-y-4">
-          <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Staff Email Address</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium" /></div></div>
           {loginMode === 'password' ? (
-            <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Password</label><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium" /></div></div>
+            <>
+              <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Staff Email Address</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium" /></div></div>
+              <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Password</label><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium" /></div></div>
+            </>
           ) : (
-            <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">4-Digit Security PIN</label><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} required value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))} placeholder="Enter 4-digit PIN..." className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium tracking-widest text-center text-lg" /></div></div>
+            <>
+              <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Staff Email</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium" /></div></div>
+              <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">4-Digit Security PIN</label><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" /><input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} required value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))} placeholder="Enter 4-digit PIN..." className="w-full bg-slate-50 dark:bg-black/40 border border-black/5 dark:border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-sm font-medium tracking-widest text-center text-lg" /></div></div>
+            </>
           )}
           {loginError && <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-2 text-red-500 text-xs font-semibold"><ShieldAlert className="w-4 h-4 shrink-0" /><span>{loginError}</span></div>}
           <button type="submit" disabled={isSubmitting} className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-orange-500/30 transition-all active:scale-[0.98] text-center flex items-center justify-center gap-2">{isSubmitting ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span className="text-sm">Verifying...</span></> : (loginMode === 'pin' ? 'Unlock POS with PIN' : 'Log In to Staff Dashboard')}</button>
