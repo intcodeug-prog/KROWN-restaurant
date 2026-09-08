@@ -1,27 +1,31 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
-const SMTP_SECURE = process.env.SMTP_SECURE === 'true';
-const SMTP_USER = process.env.SMTP_USER || '';
-const SMTP_PASSWORD = process.env.SMTP_PASSWORD || '';
-const SMTP_FROM = process.env.SMTP_FROM || `KROWN POS <${SMTP_USER}>`;
-const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:5454';
-
 let transporter: Transporter | null = null;
 
+function getEnv(key: string, fallback: string = ''): string {
+  return process.env[key] || fallback;
+}
+
 function getTransporter(): Transporter {
-  if (!transporter) {
-    if (!SMTP_USER || !SMTP_PASSWORD) {
-      throw new Error('[Email] SMTP not configured — set SMTP_USER and SMTP_PASSWORD');
+  const user = getEnv('SMTP_USER');
+  const password = getEnv('SMTP_PASSWORD');
+  if (!user || !password) {
+    throw new Error('[Email] SMTP not configured — set SMTP_USER and SMTP_PASSWORD');
+  }
+  if (transporter) {
+    const opts = (transporter.options as any)?.auth;
+    if (opts && (opts.user !== user || opts.pass !== password)) {
+      transporter = null;
     }
+  }
+  if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_SECURE,
-      auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
+      host: getEnv('SMTP_HOST', 'smtp.gmail.com'),
+      port: parseInt(getEnv('SMTP_PORT', '587'), 10),
+      secure: getEnv('SMTP_SECURE') === 'true',
+      auth: { user, pass: password },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
       pool: true,
       maxConnections: 3,
       maxMessages: 10,
@@ -42,7 +46,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<{ success: b
   try {
     const transport = getTransporter();
     const result = await transport.sendMail({
-      from: SMTP_FROM,
+      from: getEnv('SMTP_FROM', `KROWN POS <${getEnv('SMTP_USER')}>`),
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -58,7 +62,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<{ success: b
 }
 
 export async function verifySmtpConfig(): Promise<{ ok: boolean; error?: string }> {
-  if (!SMTP_USER || !SMTP_PASSWORD) {
+  if (!getEnv('SMTP_USER') || !getEnv('SMTP_PASSWORD')) {
     return { ok: false, error: 'SMTP_USER and SMTP_PASSWORD must be set' };
   }
   try {
@@ -74,4 +78,10 @@ export function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
-export { SMTP_FROM, APP_URL };
+export function getSmtpFrom(): string {
+  return getEnv('SMTP_FROM', `KROWN POS <${getEnv('SMTP_USER')}>`);
+}
+
+export function getAppUrl(): string {
+  return getEnv('APP_URL', getEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:5454'));
+}

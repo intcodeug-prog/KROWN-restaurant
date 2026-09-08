@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { getSql } from '@/lib/neon-server';
 import { hashPassword } from '@/lib/auth';
-import { sendEmail, APP_URL } from './email.service';
+import { sendEmail, getAppUrl } from './email.service';
 import { passwordResetEmail } from './email-templates';
 import { logEmail } from './email-log.service';
 import { logAuditEvent } from '@/lib/audit';
@@ -85,7 +85,7 @@ export async function sendPasswordResetEmail(staffId: string, senderName: string
   const staff = rows[0] as any;
   const { token, expiresAt } = await createPasswordResetToken(staffId);
 
-  const resetUrl = `${APP_URL}/reset-password?token=${encodeURIComponent(token)}`;
+  const resetUrl = `${getAppUrl()}/reset-password?token=${encodeURIComponent(token)}`;
   const emailContent = passwordResetEmail({ staffName: staff.name, resetUrl, expiresInHours: TOKEN_EXPIRY_HOURS, senderName });
 
   const result = await sendEmail({ to: staff.email, ...emailContent });
