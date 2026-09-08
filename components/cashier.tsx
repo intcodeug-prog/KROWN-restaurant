@@ -212,7 +212,7 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
           });
         const amount = Math.round(guestItems.reduce((s, gi) => s + gi.amount, 0));
 
-        const updated = dataStore.addSplitPayment(selectedOrder.id, {
+        const updated = await dataStore.addSplitPayment(selectedOrder.id, {
           amount,
           paymentMethod: guest.paymentMethod,
           splitIndex,
@@ -299,7 +299,7 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
     .reduce((sum, o) => sum + (o.paidAmount || o.total || 0), 0);
 
   // Process Full Order Payment Settlement
-  const handleCompleteFullPayment = (order: any) => {
+  const handleCompleteFullPayment = async (order: any) => {
     if (!order) return;
     setIsProcessing(true);
     vibrate(30);
@@ -329,7 +329,7 @@ export default function CashierDashboard({ setView, activeStaff }: { setView: (v
         calculatedChange = received - amountDue;
       }
 
-      const updated = dataStore.payOrder(order.id, {
+      const updated = await dataStore.payOrder(order.id, {
         paymentMethod,
         isCorporateCredit: paymentMethod === 'Corporate Credit',
         companyId: paymentMethod === 'Corporate Credit' ? selectedCompanyId : undefined,

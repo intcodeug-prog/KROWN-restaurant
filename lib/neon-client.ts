@@ -163,11 +163,12 @@ export const api = {
 
   // ── Orders ────────────────────────────────────────────────────────────────
   orders: {
-    list: (branchId?: string, startDate?: number, endDate?: number) => {
+    list: (branchId?: string, startDate?: number, endDate?: number, limit?: number) => {
       const params = new URLSearchParams();
       if (branchId) params.set('branchId', branchId);
       if (startDate) params.set('startDate', String(startDate));
       if (endDate) params.set('endDate', String(endDate));
+      if (limit) params.set('limit', String(limit));
       const qs = params.toString();
       return apiFetch(`/api/orders${qs ? '?' + qs : ''}`);
     },

@@ -12,12 +12,15 @@ export async function createIdempotentOrder(ctx: TenantContext, input: {
   branchId: string;
   tableNumber: string;
   seat?: string;
+  type?: string;
+  place?: string;
   items: { productId: string; quantity: number; notes?: string; addOns?: { name:string; price:number }[] }[];
   staffId: string;
   companyName?: string;
   tin?: string;
   companyId?: string;
   idempotencyKey: string;
+  orderId?: string;
 }): Promise<{ order: Order; replayed: boolean }> {
   await assertBranchAccess(ctx, input.branchId);
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(input.idempotencyKey)) throw new Error('Invalid idempotency key');
@@ -53,10 +56,12 @@ export async function createIdempotentOrder(ctx: TenantContext, input: {
     if (total > remaining) throw new Error(`Insufficient company credit. Available: ${remaining}`);
   }
 
-  const id = generateId();
+  const id = input.orderId || generateId();
+  const orderType = input.type || 'dine_in';
+  const orderPlace = input.place || null;
   const inserted = await sql`
-    INSERT INTO orders (id,organization_id,restaurant_id,table_number,seat,status,items,subtotal,tax,total,payment_status,company_id,user_id,company_name,tin_number,idempotency_key,created_at,updated_at)
-    VALUES (${id},${ctx.organizationId},${input.branchId},${input.tableNumber},${input.seat||null},'pending',${JSON.stringify(processedItems)},${subtotal},${tax},${total},'unpaid',${input.companyId||null},${ctx.userId},${input.companyName||null},${input.tin||null},${input.idempotencyKey},NOW(),NOW())
+    INSERT INTO orders (id,organization_id,restaurant_id,table_number,seat,type,place,status,items,subtotal,tax,total,payment_status,company_id,user_id,company_name,tin_number,idempotency_key,created_at,updated_at)
+    VALUES (${id},${ctx.organizationId},${input.branchId},${input.tableNumber},${input.seat||null},${orderType},${orderPlace},'pending',${JSON.stringify(processedItems)},${subtotal},${tax},${total},'unpaid',${input.companyId||null},${ctx.userId},${input.companyName||null},${input.tin||null},${input.idempotencyKey},NOW(),NOW())
     ON CONFLICT (idempotency_key) DO NOTHING RETURNING *
   `;
   if (!inserted.length) {

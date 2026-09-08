@@ -53,9 +53,9 @@ export default function KitchenPage({ setView, activeStaff }: { setView: (v: 'po
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBranchId]);
 
-  const updateOrderStatus = (order: any, newStatus: any) => {
+  const updateOrderStatus = async (order: any, newStatus: any) => {
     vibrate(40);
-    dataStore.updateOrderStatus(order.id, newStatus);
+    await dataStore.updateOrderStatus(order.id, newStatus);
   };
 
   return (

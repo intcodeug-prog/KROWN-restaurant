@@ -141,9 +141,12 @@ function fromDbOrder(r: any): Order {
   if (r.created_at) {
     parsedCreatedAt = typeof r.created_at === 'string' ? new Date(r.created_at).getTime() : Number(r.created_at);
   }
+  // Normalize type from snake_case (DB) to title case (client)
+  const typeMap: Record<string, string> = { dine_in: 'Dine In', takeaway: 'Takeaway', delivery: 'Delivery' };
+  const normalizedType = typeMap[r.type] || r.type || 'Dine In';
   return {
-    id: r.id, table: r.table_number, place: r.place, seat: r.seat,
-    type: r.type, status: r.status,
+    id: r.id, table: r.table_number, place: r.place || undefined, seat: r.seat,
+    type: normalizedType as any, status: r.status,
     paymentStatus: r.payment_status || 'unpaid', paidAmount: r.paid_amount || 0,
     splitPayments: r.split_payments || [], items: r.items ?? [],
     subtotal: r.subtotal, tax: r.tax, total: r.total,
@@ -445,7 +448,7 @@ class DataStoreEngine {
         await this.refreshOrders();
         this.lastFetchAt = Date.now();
       } catch { /* ignore poll errors */ }
-    }, 10000);
+    }, 2000);
   }
 
   private async refreshOrders() {
@@ -454,9 +457,14 @@ class DataStoreEngine {
         try { const res = await p; return { data: res?.data ?? res ?? [], ok: true }; }
         catch { return { data: [], ok: false }; }
       };
-      const ordersRes = await safe(api.orders.list());
+      const ordersRes = await safe(api.orders.list(undefined, undefined, undefined, 500));
       if (ordersRes.ok && Array.isArray(ordersRes.data)) {
-        this.orders = ordersRes.data.map(fromDbOrder);
+        const dbOrders = ordersRes.data.map(fromDbOrder);
+        const dbOrderIds = new Set(dbOrders.map(o => o.id));
+        // Keep local-only orders (not yet in DB) — these are optimistically inserted
+        const localOnlyOrders = this.orders.filter(o => !dbOrderIds.has(o.id));
+        // Merge: local-only orders first, then all DB orders
+        this.orders = [...localOnlyOrders, ...dbOrders];
         this.persistLocal();
       }
     } catch { /* ignore */ }
@@ -565,7 +573,7 @@ class DataStoreEngine {
       ] = await Promise.all([
         safe(api.products.list()),
         safe(api.ingredients.list()),
-        safe(api.orders.list()),
+        safe(api.orders.list(undefined, undefined, undefined, 500)),
         safe(api.branches.list()),
         safe(api.staff.list()),
         safe(api.companies.list()),
@@ -581,7 +589,12 @@ class DataStoreEngine {
       if (productsRes.ok && Array.isArray(productsRes.data)) this.products = productsRes.data.map(fromDbProduct);
       if (ingredientsRes.ok && Array.isArray(ingredientsRes.data)) this.ingredients = ingredientsRes.data.map(fromDbIngredient);
       if (movementsRes.ok && Array.isArray(movementsRes.data)) this.inventoryMovements = movementsRes.data.map(fromDbMovement);
-      if (ordersRes.ok && Array.isArray(ordersRes.data)) this.orders = ordersRes.data.map(fromDbOrder);
+      if (ordersRes.ok && Array.isArray(ordersRes.data)) {
+        const dbOrders = ordersRes.data.map(fromDbOrder);
+        const dbOrderIds = new Set(dbOrders.map(o => o.id));
+        const localOnlyOrders = this.orders.filter(o => !dbOrderIds.has(o.id));
+        this.orders = [...localOnlyOrders, ...dbOrders];
+      }
       if (branchesRes.ok && Array.isArray(branchesRes.data)) this.branches = branchesRes.data.map(fromDbBranch);
       if (staffRes.ok && Array.isArray(staffRes.data) && staffRes.data.length > 0) {
         const dbStaffList = staffRes.data.map(fromDbStaff);
@@ -860,7 +873,7 @@ class DataStoreEngine {
 
   // ── Write Methods (delegate to API) ────────────────────────────────────────
 
-  public createOrder(orderData: {
+  public async createOrder(orderData: {
     table: string; place?: string; seat?: string;
     type: 'Dine In' | 'Takeaway' | 'Delivery';
     items: any[]; subtotal: number; tax: number; total: number;
@@ -869,10 +882,11 @@ class DataStoreEngine {
     companyStaffId?: string; companyStaffName?: string; workId?: string;
     restaurantId?: string; branchName?: string; userId?: string;
     tinNumber?: string; notes?: string;
-  }): Order {
+  }): Promise<Order> {
+    const orderId = crypto.randomUUID();
     const branchObj = this.branches.find(b => b.id === orderData.restaurantId);
     const newOrder: Order = {
-      id: crypto.randomUUID(),
+      id: orderId,
       table: orderData.table,
       place: orderData.place || 'Main Dining Hall',
       seat: orderData.seat || 'Whole Table',
@@ -899,43 +913,55 @@ class DataStoreEngine {
       notes: orderData.notes,
     };
 
+    // Optimistic insert for instant UI feedback
     this.orders = [newOrder, ...this.orders];
     if (newOrder.type === 'Dine In' && newOrder.table) {
       this.updateTableOccupancy(newOrder.table, 'occupied');
     }
     this.persistLocal();
 
-    api.orders.create({
-      branchId: orderData.restaurantId || this.branches[0]?.id,
-      table: orderData.table,
-      seat: orderData.seat,
-      type: orderData.type,
-      items: orderData.items.map((item: any) => ({
-        productId: item.id || item.productId,
-        quantity: item.quantity || 1,
-        notes: item.note || item.notes,
-        addOns: item.addOns,
-      })),
-      staffId: orderData.userId,
-      companyId: orderData.companyId,
-      companyName: orderData.companyName,
-      tin: orderData.tinNumber,
-    }).then(res => {
+    try {
+      const res = await api.orders.create({
+        id: orderId,
+        branchId: orderData.restaurantId || this.branches[0]?.id,
+        table: orderData.table,
+        seat: orderData.seat,
+        type: orderData.type,
+        place: orderData.place,
+        items: orderData.items.map((item: any) => ({
+          productId: item.id || item.productId,
+          quantity: item.quantity || 1,
+          notes: item.note || item.notes,
+          addOns: item.addOns,
+        })),
+        staffId: orderData.userId,
+        companyId: orderData.companyId,
+        companyName: orderData.companyName,
+        tin: orderData.tinNumber,
+      });
       const serverOrder = res.data ?? res;
       if (serverOrder?.id) {
-        this.orders = this.orders.map(o => o.id === newOrder.id ? fromDbOrder(serverOrder) : o);
+        this.orders = this.orders.map(o => o.id === orderId ? fromDbOrder(serverOrder) : o);
         this.persistLocal();
       }
-    }).catch(e => console.warn('[DataStore] createOrder API error:', e));
+    } catch (e) {
+      console.warn('[DataStore] createOrder API error:', e);
+      // Remove the optimistic order since it failed to persist
+      this.orders = this.orders.filter(o => o.id !== orderId);
+      if (newOrder.type === 'Dine In' && newOrder.table) {
+        this.updateTableOccupancy(newOrder.table, 'available');
+      }
+      this.persistLocal();
+    }
 
     return newOrder;
   }
 
-  public placeOrder(orderData: any): Order {
+  public async placeOrder(orderData: any): Promise<Order> {
     return this.createOrder(orderData);
   }
 
-  public addItemsToOrder(orderId: string, newItems: any[]): Order | null {
+  public async addItemsToOrder(orderId: string, newItems: any[]): Promise<Order | null> {
     let targetOrder: Order | null = null;
     this.orders = this.orders.map(o => {
       if (o.id === orderId) {
@@ -954,27 +980,37 @@ class DataStoreEngine {
         if (updated.type === 'Dine In' && updated.table) {
           this.updateTableOccupancy(updated.table, 'occupied');
         }
-        api.orders.addItems(orderId, newItems).catch(e => console.warn('[DataStore] addItems API error:', e));
         return updated;
       }
       return o;
     });
     this.persistLocal();
+    if (targetOrder) {
+      try {
+        await api.orders.addItems(orderId, newItems);
+      } catch (e) {
+        console.warn('[DataStore] addItems API error:', e);
+      }
+    }
     return targetOrder;
   }
 
-  public updateOrderStatus(orderId: string, newStatus: Order['status']) {
+  public async updateOrderStatus(orderId: string, newStatus: Order['status']) {
     this.orders = this.orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o);
     this.persistLocal();
-    api.orders.updateStatus(orderId, newStatus).catch(e => console.warn('[DataStore] updateStatus API error:', e));
+    try {
+      await api.orders.updateStatus(orderId, newStatus);
+    } catch (e) {
+      console.warn('[DataStore] updateStatus API error:', e);
+    }
   }
 
-  public payOrder(orderId: string, paymentData: {
+  public async payOrder(orderId: string, paymentData: {
     paymentMethod: Order['paymentMethod'];
     isCorporateCredit?: boolean; companyId?: string; companyName?: string;
     companyStaffId?: string; companyStaffName?: string; workId?: string;
     tinNumber?: string; amountReceived?: number; change?: number;
-  }): Order | null {
+  }): Promise<Order | null> {
     let targetOrder: Order | null = null;
     this.orders = this.orders.map(o => {
       if (o.id === orderId) {
@@ -1004,21 +1040,27 @@ class DataStoreEngine {
           if (!hasRemainingUnpaid) this.updateTableOccupancy(updated.table, 'available');
         }
 
-        api.orders.pay(orderId, paymentData).catch(e => console.warn('[DataStore] pay API error:', e));
         return updated;
       }
       return o;
     });
     this.persistLocal();
+    if (targetOrder) {
+      try {
+        await api.orders.pay(orderId, paymentData);
+      } catch (e) {
+        console.warn('[DataStore] pay API error:', e);
+      }
+    }
     return targetOrder;
   }
 
-  public addSplitPayment(orderId: string, split: {
+  public async addSplitPayment(orderId: string, split: {
     amount: number; paymentMethod: Order['paymentMethod'];
     splitIndex: number; totalSplits: number; seatCovered?: string;
     itemsCovered?: string[]; guestLabel?: string;
     guestItems?: { id?: string; name: string; price: number; quantity: number; amount: number }[];
-  }): Order | null {
+  }): Promise<Order | null> {
     let targetOrder: Order | null = null;
     this.orders = this.orders.map(o => {
       if (o.id === orderId) {
@@ -1038,27 +1080,40 @@ class DataStoreEngine {
           paymentMethod: split.paymentMethod,
         };
         targetOrder = updated;
-        api.orders.splitPay(orderId, updatedSplits).catch(e => console.warn('[DataStore] splitPay API error:', e));
         return updated;
       }
       return o;
     });
     this.persistLocal();
+    if (targetOrder) {
+      try {
+        const splits = (targetOrder as any).splitPayments || [];
+        await api.orders.splitPay(orderId, splits);
+      } catch (e) {
+        console.warn('[DataStore] splitPay API error:', e);
+      }
+    }
     return targetOrder;
   }
 
-  public updateOrderCustomerTin(orderId: string, tin: string): Order | null {
+  public async updateOrderCustomerTin(orderId: string, tin: string): Promise<Order | null> {
     let targetOrder: Order | null = null;
     this.orders = this.orders.map(o => {
       if (o.id === orderId) {
         const updated = { ...o, tinNumber: tin };
         targetOrder = updated;
-        api.orders.updateTin(orderId, tin).catch(e => console.warn('[DataStore] updateTin API error:', e));
         return updated;
       }
       return o;
     });
     this.persistLocal();
+    if (targetOrder) {
+      try {
+        await api.orders.updateTin(orderId, tin);
+      } catch (e) {
+        console.warn('[DataStore] updateTin API error:', e);
+      }
+    }
     return targetOrder;
   }
 

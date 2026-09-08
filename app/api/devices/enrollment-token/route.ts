@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const deviceType = normalizeDeviceType(String(body.deviceType || '').trim().toLowerCase());
     const deviceName = String(body.deviceName || '').trim();
     const allowedRoles = Array.isArray(body.allowedRoles)
-      ? body.allowedRoles.map((r: unknown) => String(r).trim().toLowerCase()).filter((r: string) => ALLOWED_ROLES.has(r)).slice(0, 20)
+      ? body.allowedRoles.map((r: unknown) => String(r).trim().toLowerCase().replace(/\s+/g, '_')).filter((r: string) => ALLOWED_ROLES.has(r)).slice(0, 20)
       : [];
 
     const sql = getSql();
@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
       const restaurantCreator = await sql`
         SELECT id FROM staff
         WHERE organization_id=${organizationId} AND status='active'
-          AND lower(role) IN ('restaurant_admin','admin','branch_manager','manager')
-        ORDER BY CASE WHEN lower(role) IN ('restaurant_admin','admin') THEN 0 ELSE 1 END, created_at ASC
+          AND replace(lower(role), ' ', '_') IN ('restaurant_admin','admin','branch_manager','manager')
+        ORDER BY CASE WHEN replace(lower(role), ' ', '_') IN ('restaurant_admin','admin') THEN 0 ELSE 1 END, created_at ASC
         LIMIT 1
       `;
       if (!restaurantCreator.length) {

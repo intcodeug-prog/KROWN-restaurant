@@ -175,7 +175,7 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
 
   const [orderType, setOrderType] = useState<'Dine In' | 'Takeaway' | 'Delivery'>('Dine In');
 
-  const submitOrder = (pm: any = paymentMethod) => {
+  const submitOrder = async (pm: any = paymentMethod) => {
     if (cart.length === 0) return;
 
     // For Dine In, table is required. For Takeaway/Delivery, auto-assign takeaway counter.
@@ -206,7 +206,7 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
       if (orderType === 'Dine In' && finalTable) {
         const existingOpen = dataStore.getOpenOrderByTable(finalTable, finalSeat);
         if (existingOpen) {
-          const updated = dataStore.addItemsToOrder(existingOpen.id, cart);
+          const updated = await dataStore.addItemsToOrder(existingOpen.id, cart);
           if (updated) {
             autoPrintKitchenTicket(updated);
             vibrate([50, 100, 50]);
@@ -220,7 +220,7 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
         }
       }
 
-      const placed = dataStore.placeOrder({
+      const placed = await dataStore.placeOrder({
         table: finalTable || 'TAKEAWAY-01',
         place: finalPlace,
         seat: finalSeat,
@@ -1158,9 +1158,9 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
                       <div className="flex items-center gap-2">
                         {cart.length > 0 ? (
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               vibrate(30);
-                              const updated = dataStore.addItemsToOrder(o.id, cart);
+                              const updated = await dataStore.addItemsToOrder(o.id, cart);
                               if (updated) {
                                 autoPrintKitchenTicket(updated);
                                 alert(`Added ${cart.length} items to order #${o.id}! Sent Kitchen Ticket.`);

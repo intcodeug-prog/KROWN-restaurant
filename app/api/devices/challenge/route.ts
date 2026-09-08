@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractVerifiedTenantContext } from '@/lib/tenant';
-import { issueDeviceChallenge, issuePublicDeviceChallenge } from '@/lib/services/device-auth.service';
+import { issuePublicDeviceChallenge } from '@/lib/services/device-auth.service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,12 +7,11 @@ export async function POST(request: NextRequest) {
     const deviceId = String(body.deviceId || '').trim();
     if (!deviceId) return NextResponse.json({ data:null, error:'deviceId is required' }, { status:400 });
 
-    const ctx = await extractVerifiedTenantContext(request);
-    if (ctx) {
-      const data = await issueDeviceChallenge(ctx, deviceId);
-      return NextResponse.json({ data });
-    }
-
+    // Always use the public (unscoped) path.  The challenge is a
+    // pre-authentication step — the device proves possession of its
+    // private key.  Using the caller's session org here breaks when the
+    // session cookie belongs to a *different* organisation than the
+    // device, producing spurious "Device not found" errors.
     const data = await issuePublicDeviceChallenge(deviceId);
     return NextResponse.json({ data: { challenge: data.challenge, expiresInSeconds: data.expiresInSeconds, deviceId: data.deviceId } });
   } catch (e:any) {

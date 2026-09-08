@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     if(items.some((item:any)=>!item.productId||!Number.isFinite(item.quantity)||item.quantity<=0))return NextResponse.json({error:'Invalid order item'},{status:400});
     const idempotencyKey=String(body.idempotencyKey||body.idempotency_key||body.id||request.headers.get('Idempotency-Key')||'').trim();
     if(!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey))return NextResponse.json({error:'A valid order identity/idempotency key is required'},{status:400});
-    const result=await createIdempotentOrder(ctx,{branchId,tableNumber:String(body.table||body.table_number||'1'),seat:body.seat,items,staffId:ctx.userId,companyName:body.companyName||body.company_name,tin:body.tin,companyId:body.companyId||body.company_id,idempotencyKey});
+    const result=await createIdempotentOrder(ctx,{branchId,tableNumber:String(body.table||body.table_number||'1'),seat:body.seat,type:body.type,place:body.place,items,staffId:ctx.userId,companyName:body.companyName||body.company_name,tin:body.tin,companyId:body.companyId||body.company_id,idempotencyKey,orderId:body.id||undefined});
     return NextResponse.json({data:result.order,replayed:result.replayed},{status:result.replayed?200:201});
   }catch(error:any){const message=error?.message||'Failed to create order';return NextResponse.json({error:message},{status:/Forbidden/i.test(message)?403:/invalid|required|credit|quantity/i.test(message)?400:500});}
 }

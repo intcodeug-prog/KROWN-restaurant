@@ -101,7 +101,7 @@ export async function authenticateByPinOnly(
     `;
 
     candidates = candidates.filter((staff: any) => {
-      const role = String(staff.role || '').trim().toLowerCase();
+      const role = String(staff.role || '').trim().toLowerCase().replace(/\s+/g, '_');
       if (ADMIN_ROLES.has(role)) return false;
       return !allowedRoles.length || allowedRoles.includes(role);
     });
