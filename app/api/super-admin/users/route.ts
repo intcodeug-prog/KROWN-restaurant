@@ -4,6 +4,7 @@ import { getSql } from '@/lib/neon-server';
 import { hashPassword } from '@/lib/auth';
 import { generateId } from '@/lib/id';
 import { logAuditEvent } from '@/lib/audit';
+import { sendWelcomeEmail } from '@/lib/services/welcome-email.service';
 
 const ROLE_MAP: Record<string, string> = {
   admin: 'restaurant_admin',
@@ -95,6 +96,13 @@ export async function POST(request: NextRequest) {
       RETURNING id, name, email, phone, role, status, assigned_branch_id, organization_id, created_at`;
 
     await logAuditEvent({ organizationId, userId: ctx.userId, userEmail: 'super_admin', actorRole: 'super_admin', action: 'SUPER_ADMIN_USER_CREATE', targetType: 'staff', targetId: id, details: { name, email, role, assignedBranchId } });
+
+    const orgName = (await sql`SELECT name FROM organizations WHERE id = ${organizationId} LIMIT 1`)[0]?.name || 'Restaurant';
+    sendWelcomeEmail({
+      staffId: id, staffName: name, email, restaurantName: orgName,
+      role: ROLE_MAP[role] || role, organizationId, tempPassword: password,
+    }).catch(() => {});
+
     return NextResponse.json({ data: rows[0] }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to create user' }, { status: 500 });

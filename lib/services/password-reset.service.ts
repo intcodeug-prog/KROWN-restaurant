@@ -1,7 +1,9 @@
 import crypto from 'crypto';
 import { getSql } from '@/lib/neon-server';
-import { hashPassword, verifyPassword } from '@/lib/auth';
-import { sendEmail, buildPasswordResetEmail, APP_URL } from './email.service';
+import { hashPassword } from '@/lib/auth';
+import { sendEmail, APP_URL } from './email.service';
+import { passwordResetEmail } from './email-templates';
+import { logEmail } from './email-log.service';
 import { logAuditEvent } from '@/lib/audit';
 
 const TOKEN_EXPIRY_HOURS = 24;
@@ -44,22 +46,15 @@ export async function verifyPasswordResetToken(rawToken: string): Promise<{ vali
   `;
 
   if (!rows.length) return { valid: false, error: 'Invalid or expired reset link' };
-
   const row = rows[0] as any;
-
   if (row.used_at) return { valid: false, error: 'This reset link has already been used' };
-
   if (new Date(row.expires_at).getTime() < Date.now()) return { valid: false, error: 'This reset link has expired' };
-
   return { valid: true, staffId: row.staff_id, orgId: row.organization_id };
 }
 
 export async function completePasswordReset(rawToken: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
   const sql = getSql();
-
-  if (!newPassword || newPassword.length < 8) {
-    return { success: false, error: 'Password must be at least 8 characters' };
-  }
+  if (!newPassword || newPassword.length < 8) return { success: false, error: 'Password must be at least 8 characters' };
 
   const verification = await verifyPasswordResetToken(rawToken);
   if (!verification.valid) return { success: false, error: verification.error };
@@ -73,13 +68,8 @@ export async function completePasswordReset(rawToken: string, newPassword: strin
   await sql`DELETE FROM staff_sessions WHERE staff_id = ${staffId} AND status = 'active'`;
 
   await logAuditEvent({
-    organizationId: orgId!,
-    userId: staffId!,
-    userEmail: 'self-reset',
-    actorRole: 'staff',
-    action: 'PASSWORD_RESET_COMPLETED',
-    targetType: 'staff',
-    targetId: staffId!,
+    organizationId: orgId!, userId: staffId!, userEmail: 'self-reset', actorRole: 'staff',
+    action: 'PASSWORD_RESET_COMPLETED', targetType: 'staff', targetId: staffId!,
     details: { method: 'email_link' },
   }).catch(() => {});
 
@@ -96,28 +86,22 @@ export async function sendPasswordResetEmail(staffId: string, senderName: string
   const { token, expiresAt } = await createPasswordResetToken(staffId);
 
   const resetUrl = `${APP_URL}/reset-password?token=${encodeURIComponent(token)}`;
-  const emailContent = buildPasswordResetEmail({
-    staffName: staff.name,
-    resetUrl,
-    expiresInHours: TOKEN_EXPIRY_HOURS,
-    senderName,
-  });
+  const emailContent = passwordResetEmail({ staffName: staff.name, resetUrl, expiresInHours: TOKEN_EXPIRY_HOURS, senderName });
 
-  const result = await sendEmail({
-    to: staff.email,
-    ...emailContent,
-  });
+  const result = await sendEmail({ to: staff.email, ...emailContent });
+
+  await logEmail({
+    organizationId: staff.organization_id, staffId, emailType: 'password_reset',
+    recipientEmail: staff.email, subject: emailContent.subject,
+    status: result.success ? 'sent' : 'failed', messageId: result.messageId,
+    errorMessage: result.error, errorCategory: result.error ? 'smtp_error' : undefined,
+  }).catch(() => {});
 
   if (!result.success) return { success: false, error: result.error || 'Failed to send email' };
 
   await logAuditEvent({
-    organizationId: staff.organization_id,
-    userId: staffId,
-    userEmail: staff.email,
-    actorRole: 'staff',
-    action: 'PASSWORD_RESET_EMAIL_SENT',
-    targetType: 'staff',
-    targetId: staffId,
+    organizationId: staff.organization_id, userId: staffId, userEmail: staff.email,
+    actorRole: 'staff', action: 'PASSWORD_RESET_EMAIL_SENT', targetType: 'staff', targetId: staffId,
     details: { senderName, expiresAt: expiresAt.toISOString() },
   }).catch(() => {});
 

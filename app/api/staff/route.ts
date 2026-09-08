@@ -3,6 +3,7 @@ import { extractTenantContext } from '@/lib/tenant';
 import { listStaff, createStaff } from '@/lib/services/staff.service';
 import { hasPermission, isPlatformRole, normalizeRole } from '@/lib/rbac';
 import { assertBranchAccess } from '@/lib/access-control';
+import { sendWelcomeEmail } from '@/lib/services/welcome-email.service';
 
 function errorResponse(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
@@ -45,6 +46,12 @@ export async function POST(request: NextRequest) {
     if (!allowed) return NextResponse.json({ data: null, error: 'You cannot assign this role' }, { status: 403 });
 
     const staff = await createStaff(ctx, { name, email, phone, pin, password, idType, idNumber, role: normalizedRole, branchId, avatar });
+
+    sendWelcomeEmail({
+      staffId: staff.id, staffName: name, email, restaurantName: 'Restaurant',
+      role: normalizedRole, organizationId: ctx.organizationId, tempPassword: password || undefined,
+    }).catch(() => {});
+
     return NextResponse.json({ data: staff }, { status: 201 });
   } catch (e) {
     return errorResponse(e, 'Failed to create staff');

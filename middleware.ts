@@ -67,6 +67,27 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // OTP send: 3 per minute per IP
+  if (pathname.startsWith('/api/otp/send')) {
+    if (!checkRateLimit(`otp-send:${ip}`, 3, 60_000)) {
+      return NextResponse.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many OTP requests. Please wait.' } }, { status: 429 });
+    }
+  }
+
+  // OTP verify: 5 per minute per IP
+  if (pathname.startsWith('/api/otp/verify')) {
+    if (!checkRateLimit(`otp-verify:${ip}`, 5, 60_000)) {
+      return NextResponse.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many verification attempts' } }, { status: 429 });
+    }
+  }
+
+  // Password reset: 3 per minute per IP
+  if (pathname.startsWith('/api/admin/send-reset-email')) {
+    if (!checkRateLimit(`reset-email:${ip}`, 3, 60_000)) {
+      return NextResponse.json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many reset requests. Please wait.' } }, { status: 429 });
+    }
+  }
+
   const authHeader = request.headers.get('authorization');
   const bearer = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
   const token = bearer || request.cookies.get('krown_session')?.value;

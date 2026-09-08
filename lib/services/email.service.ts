@@ -1,16 +1,33 @@
-import { Resend } from 'resend';
+import nodemailer, { type Transporter } from 'nodemailer';
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const RESEND_FROM = process.env.RESEND_FROM_EMAIL || 'KROWN POS <noreply@krownpos.com>';
-const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
+const SMTP_SECURE = process.env.SMTP_SECURE === 'true';
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASSWORD = process.env.SMTP_PASSWORD || '';
+const SMTP_FROM = process.env.SMTP_FROM || `KROWN POS <${SMTP_USER}>`;
+const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:5454';
 
-let resendClient: Resend | null = null;
+let transporter: Transporter | null = null;
 
-function getClient(): Resend {
-  if (!resendClient && RESEND_API_KEY) {
-    resendClient = new Resend(RESEND_API_KEY);
+function getTransporter(): Transporter {
+  if (!transporter) {
+    if (!SMTP_USER || !SMTP_PASSWORD) {
+      throw new Error('[Email] SMTP not configured — set SMTP_USER and SMTP_PASSWORD');
+    }
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      pool: true,
+      maxConnections: 3,
+      maxMessages: 10,
+    });
   }
-  return resendClient!;
+  return transporter;
 }
 
 export interface SendEmailOptions {
@@ -18,74 +35,43 @@ export interface SendEmailOptions {
   subject: string;
   html: string;
   text?: string;
+  replyTo?: string;
 }
 
-export async function sendEmail(options: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
-  const client = getClient();
-  if (!client) {
-    console.warn('[Email] Resend not configured — skipping email send');
-    return { success: false, error: 'Email service not configured' };
-  }
+export async function sendEmail(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    await client.emails.send({
-      from: RESEND_FROM,
+    const transport = getTransporter();
+    const result = await transport.sendMail({
+      from: SMTP_FROM,
       to: options.to,
       subject: options.subject,
       html: options.html,
       text: options.text,
+      replyTo: options.replyTo,
     });
-    return { success: true };
+    return { success: true, messageId: result.messageId };
   } catch (e: any) {
-    console.error('[Email] Send failed:', e?.message);
-    return { success: false, error: e?.message || 'Failed to send email' };
+    const msg = e?.message || String(e);
+    console.error('[Email] Send failed:', msg);
+    return { success: false, error: msg };
   }
 }
 
-export function buildPasswordResetEmail(opts: {
-  staffName: string;
-  resetUrl: string;
-  expiresInHours: number;
-  senderName: string;
-}): { subject: string; html: string; text: string } {
-  const { staffName, resetUrl, expiresInHours, senderName } = opts;
-  return {
-    subject: 'Reset Your KROWN POS Password',
-    html: `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0a0a0c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<div style="max-width:480px;margin:40px auto;background:#1a1a1e;border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.08);">
-  <div style="text-align:center;margin-bottom:32px;">
-    <div style="width:56px;height:56px;background:linear-gradient(135deg,#f97316,#f59e0b);border-radius:16px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;">
-      <span style="font-size:28px;">🔐</span>
-    </div>
-    <h1 style="color:#f4f4f6;font-size:22px;font-weight:700;margin:0;">Password Reset Request</h1>
-  </div>
-  <p style="color:#a1a1aa;font-size:15px;line-height:1.6;margin:0 0 20px;">
-    Hi <strong style="color:#f4f4f6;">${staffName}</strong>,
-  </p>
-  <p style="color:#a1a1aa;font-size:15px;line-height:1.6;margin:0 0 24px;">
-    <strong style="color:#f4f4f6;">${senderName}</strong> has requested a password reset for your KROWN POS account.
-  </p>
-  <div style="text-align:center;margin:32px 0;">
-    <a href="${resetUrl}" style="display:inline-block;background:linear-gradient(135deg,#f97316,#f59e0b);color:#000;font-size:16px;font-weight:700;padding:14px 36px;border-radius:14px;text-decoration:none;letter-spacing:0.3px;">
-      Reset My Password
-    </a>
-  </div>
-  <p style="color:#71717a;font-size:13px;line-height:1.6;margin:0 0 8px;text-align:center;">
-    This link expires in <strong style="color:#a1a1aa;">${expiresInHours} hour${expiresInHours > 1 ? 's' : ''}</strong> and can only be used once.
-  </p>
-  <div style="border-top:1px solid rgba(255,255,255,0.06);margin:24px 0;padding-top:20px;">
-    <p style="color:#52525b;font-size:12px;line-height:1.5;margin:0;text-align:center;">
-      If you didn't request this, ignore this email. Your password will remain unchanged.<br>
-      Do not share this link with anyone.
-    </p>
-  </div>
-</div>
-</body>
-</html>`,
-    text: `Password Reset Request\n\nHi ${staffName},\n\n${senderName} has requested a password reset for your KROWN POS account.\n\nReset your password: ${resetUrl}\n\nThis link expires in ${expiresInHours} hour(s) and can only be used once.\n\nIf you didn't request this, ignore this email. Your password will remain unchanged.`,
-  };
+export async function verifySmtpConfig(): Promise<{ ok: boolean; error?: string }> {
+  if (!SMTP_USER || !SMTP_PASSWORD) {
+    return { ok: false, error: 'SMTP_USER and SMTP_PASSWORD must be set' };
+  }
+  try {
+    const transport = getTransporter();
+    await transport.verify();
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'SMTP verification failed' };
+  }
 }
 
-export { APP_URL };
+export function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+export { SMTP_FROM, APP_URL };
