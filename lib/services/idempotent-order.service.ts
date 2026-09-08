@@ -6,7 +6,8 @@ import { logAudit } from '@/lib/audit';
 import * as inventoryService from '@/lib/services/inventory.service';
 import type { Order, OrderItem } from '@/lib/services/order.service';
 
-const VAT_RATE = 0.18;
+// KROWN selling prices are final prices. Tax is intentionally disabled.
+const VAT_RATE = 0;
 
 export async function createIdempotentOrder(ctx: TenantContext, input: {
   branchId: string;
@@ -44,8 +45,10 @@ export async function createIdempotentOrder(ctx: TenantContext, input: {
     subtotal += itemTotal;
     processedItems.push({ productId:item.productId, quantity:qty, unitPrice:Number(product.price), name:product.name, notes:item.notes, addOns:item.addOns });
   }
-  const tax = Math.round(subtotal * VAT_RATE);
-  const total = subtotal + tax;
+
+  // Tax is disabled for all new orders. Historical orders remain untouched.
+  const tax = 0;
+  const total = subtotal;
 
   if (input.companyId) {
     const companies = await sql`SELECT credit_limit_ugx,current_balance_ugx,status FROM companies WHERE id=${input.companyId} AND organization_id=${ctx.organizationId} AND branch_id=${input.branchId} LIMIT 1`;
