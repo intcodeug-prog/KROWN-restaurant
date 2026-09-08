@@ -9,9 +9,13 @@ export async function GET(request: NextRequest) {
   const ctx = await extractVerifiedTenantContext(request);
   if (!ctx) return NextResponse.json({ error:'Authentication required' }, { status:401 });
   try {
-    const branchId=request.nextUrl.searchParams.get('branchId')||ctx.branchId;
-    if(!branchId)return NextResponse.json({error:'Branch is required'},{status:400});
-    await assertBranchAccess(ctx,branchId);
+    // A branch-scoped user is restricted to their assigned branch. Restaurant
+    // admins/managers without a branch assignment may legitimately list the
+    // organization's orders across branches. Do not turn a missing branch
+    // into a 400 because that makes every reload appear to have lost data.
+    const requestedBranchId=request.nextUrl.searchParams.get('branchId')||undefined;
+    const branchId=requestedBranchId||ctx.branchId||undefined;
+    if (requestedBranchId || ctx.branchId) await assertBranchAccess(ctx,branchId!);
     const startDate=request.nextUrl.searchParams.get('startDate'); const endDate=request.nextUrl.searchParams.get('endDate');
     let orders=await listOrders(ctx,branchId,startDate?Number(startDate):undefined,endDate?Number(endDate):undefined);
     const limit=Math.min(Math.max(parseInt(request.nextUrl.searchParams.get('limit')||'100',10)||100,1),500);
