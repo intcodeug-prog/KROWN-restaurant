@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { OfflineSyncBanner } from '@/components/offline-sync-banner';
 import { KrownAuthOverlay } from '@/components/krown-auth-overlay';
+import { KrownSignOut } from '@/components/krown-sign-out';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.variable} font-sans bg-[#F4F4F6] dark:bg-[#0A0A0C] text-slate-900 dark:text-slate-100 min-h-screen selection:bg-orange-500/30`} suppressHydrationWarning>
         <OfflineSyncBanner />
         {children}
+        <KrownSignOut />
         <KrownAuthOverlay />
         <script
           dangerouslySetInnerHTML={{
