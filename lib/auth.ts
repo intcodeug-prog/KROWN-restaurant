@@ -36,6 +36,14 @@ export async function authenticateStaff(email: string, password: string, deviceC
   const staff = rows[0] as any;
   if (staff.status !== 'active' || !staff.password_argon2 || !(await verifyPassword(staff.password_argon2, password))) return { success: false, error: 'Invalid email or password' };
 
+  // Restaurant Admin accounts are global administrator accounts for their organization.
+  // They must be able to sign in from any computer without device activation.
+  if (canonicalRole(staff.role) === 'Restaurant Admin') {
+    const token = await createToken({ sub: staff.id, org: staff.organization_id, role: staff.role, branch: staff.assigned_branch_id, email: staff.email });
+    await createStaffSession(staff, token, { deviceId: null });
+    return staffResult(staff, token);
+  }
+
   if (!deviceContext?.deviceId) return { success: false, error: 'This computer is not activated. Activate this device before signing in.' };
   if (staff.organization_id !== deviceContext.organizationId) return { success: false, error: 'This device is registered to a different restaurant.' };
   if ((deviceContext.branchId || null) !== (staff.assigned_branch_id || null)) return { success: false, error: 'This device is registered to a different branch.' };
