@@ -7,6 +7,7 @@ import { logEmail } from './email-log.service';
 import { logAuditEvent } from '@/lib/audit';
 
 const TOKEN_EXPIRY_HOURS = 24;
+const MIN_PASSWORD_LENGTH = 5;
 
 function sha256(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex');
@@ -54,7 +55,9 @@ export async function verifyPasswordResetToken(rawToken: string): Promise<{ vali
 
 export async function completePasswordReset(rawToken: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
   const sql = getSql();
-  if (!newPassword || newPassword.length < 8) return { success: false, error: 'Password must be at least 8 characters' };
+  if (typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, error: 'Password must be at least 5 characters' };
+  }
 
   const verification = await verifyPasswordResetToken(rawToken);
   if (!verification.valid) return { success: false, error: verification.error };
