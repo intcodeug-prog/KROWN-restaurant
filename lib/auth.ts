@@ -23,63 +23,38 @@ function tokenHash(token: string): string { return createHash('sha256').update(t
 
 export interface AuthStaff { id: string; name: string; email: string; role: string; branch: string; assignedBranchId: string | null; assigned_branch_id: string | null; organizationId: string; organization_id: string; status: string; }
 export interface AuthResult { success: boolean; token?: string; staff?: AuthStaff; error?: string; }
-
-/** Convert every DB role spelling into the single role vocabulary used by the portals. */
-function canonicalRole(role: string | null | undefined): string {
-  const normalized = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  const map: Record<string, string> = {
-    super_admin: 'super_admin',
-    restaurant_admin: 'Restaurant Admin',
-    admin: 'Restaurant Admin',
-    branch_manager: 'Branch Manager',
-    manager: 'Branch Manager',
-    cashier: 'Cashier',
-    senior_waiter: 'Senior Waiter',
-    waiter: 'Senior Waiter',
-    head_chef: 'Head Chef',
-    chef: 'Head Chef',
-    kitchen_staff: 'Kitchen Staff',
-  };
-  return map[normalized] || String(role || 'Cashier');
-}
-
+function canonicalRole(role: string | null | undefined): string { const normalized = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_'); const map: Record<string, string> = { super_admin: 'super_admin', restaurant_admin: 'Restaurant Admin', admin: 'Restaurant Admin', branch_manager: 'Branch Manager', manager: 'Branch Manager', cashier: 'Cashier', senior_waiter: 'Senior Waiter', waiter: 'Senior Waiter', head_chef: 'Head Chef', chef: 'Head Chef', kitchen_staff: 'Kitchen Staff' }; return map[normalized] || String(role || 'Cashier'); }
 async function staffResult(staff: any, token?: string): Promise<AuthResult> { const branchId = staff.assigned_branch_id || null; return { success: true, token, staff: { id: staff.id, name: staff.name, email: staff.email, role: canonicalRole(staff.role), branch: staff.branch || '', assignedBranchId: branchId, assigned_branch_id: branchId, organizationId: staff.organization_id, organization_id: staff.organization_id, status: staff.status || 'active' } }; }
-
 async function createStaffSession(staff: any, token: string, requestMeta?: { ip?: string | null; userAgent?: string | null; deviceId?: string | null }): Promise<void> { const sql = getSql(); await sql`INSERT INTO staff_sessions (organization_id, staff_id, device_id, token_hash, role, permissions, status, ip_address, user_agent, expires_at, last_active_at) VALUES (${staff.organization_id}, ${staff.id}, ${requestMeta?.deviceId || null}, ${tokenHash(token)}, ${staff.role}, '[]'::jsonb, 'active', ${requestMeta?.ip || null}, ${requestMeta?.userAgent || null}, ${new Date(Date.now() + SESSION_EXPIRY_MS)}, NOW())`; }
 export async function revokeSession(token: string, reason = 'logout'): Promise<void> { const sql = getSql(); await sql`UPDATE staff_sessions SET status='revoked', revoked_at=NOW(), revoked_reason=${reason}, last_active_at=NOW() WHERE token_hash=${tokenHash(token)} AND status='active'`; }
 async function assertSessionActive(token: string, payload: TokenPayload): Promise<boolean> { if (payload.role === 'super_admin' && payload.org === SUPER_ADMIN_ORG) return true; const sql = getSql(); const rows = await sql`SELECT ss.id,ss.status,ss.expires_at,ss.staff_id,ss.organization_id,ss.role,ss.device_id,d.status AS device_status,d.trust_status AS device_trust_status,d.organization_id AS device_organization_id,d.branch_id AS device_branch_id FROM staff_sessions ss LEFT JOIN devices d ON d.id=ss.device_id WHERE ss.token_hash=${tokenHash(token)} LIMIT 1`; if (!rows.length) return false; const s = rows[0] as any; if (s.status !== 'active' || new Date(s.expires_at).getTime() <= Date.now()) return false; if (s.staff_id !== payload.sub || s.organization_id !== payload.org || s.role !== payload.role) return false; if (s.device_id) { if (s.device_status !== 'active' || s.device_trust_status === 'revoked' || s.device_organization_id !== payload.org || (payload.branch && s.device_branch_id !== payload.branch)) return false; } await sql`UPDATE staff_sessions SET last_active_at=NOW() WHERE id=${s.id} AND status='active'`; return true; }
 
-export async function authenticateStaff(email: string, password: string): Promise<AuthResult> { const sql = getSql(); const rows = await queryWithRetry(() => sql`SELECT id,name,email,role,branch,assigned_branch_id,organization_id,password_argon2,status FROM staff WHERE lower(email)=${email.toLowerCase().trim()} AND lower(role) <> 'super_admin' LIMIT 1`); if (!rows.length) return { success: false, error: 'Invalid email or password' }; const staff = rows[0] as any; if (staff.status !== 'active' || !staff.password_argon2 || !(await verifyPassword(staff.password_argon2, password))) return { success: false, error: 'Invalid email or password' }; const token = await createToken({ sub: staff.id, org: staff.organization_id, role: staff.role, branch: staff.assigned_branch_id, email: staff.email }); await createStaffSession(staff, token); return staffResult(staff, token); }
+export async function authenticateStaff(email: string, password: string, deviceContext?: { deviceId: string; organizationId: string; branchId: string | null; ip?: string | null; userAgent?: string | null }): Promise<AuthResult> {
+  const sql = getSql();
+  const rows = await queryWithRetry(() => sql`SELECT id,name,email,role,branch,assigned_branch_id,organization_id,password_argon2,status FROM staff WHERE lower(email)=${email.toLowerCase().trim()} AND lower(role) <> 'super_admin' LIMIT 1`);
+  if (!rows.length) return { success: false, error: 'Invalid email or password' };
+  const staff = rows[0] as any;
+  if (staff.status !== 'active' || !staff.password_argon2 || !(await verifyPassword(staff.password_argon2, password))) return { success: false, error: 'Invalid email or password' };
+
+  if (!deviceContext?.deviceId) return { success: false, error: 'This computer is not activated. Activate this device before signing in.' };
+  if (staff.organization_id !== deviceContext.organizationId) return { success: false, error: 'This device is registered to a different restaurant.' };
+  if ((deviceContext.branchId || null) !== (staff.assigned_branch_id || null)) return { success: false, error: 'This device is registered to a different branch.' };
+
+  const deviceRows = await sql`SELECT id,organization_id,branch_id,status,trust_status,allowed_roles FROM devices WHERE id=${deviceContext.deviceId} LIMIT 1`;
+  if (!deviceRows.length) return { success: false, error: 'Registered device not found.' };
+  const device = deviceRows[0] as any;
+  if (device.status !== 'active' || device.trust_status === 'revoked') return { success: false, error: 'This device is no longer active.' };
+  if (device.organization_id !== staff.organization_id || (device.branch_id || null) !== (staff.assigned_branch_id || null)) return { success: false, error: 'This device is not registered to this restaurant or branch.' };
+  const allowedRoles = Array.isArray(device.allowed_roles) ? device.allowed_roles : [];
+  if (allowedRoles.length && !allowedRoles.includes(staff.role) && !allowedRoles.includes(canonicalRole(staff.role))) return { success: false, error: 'Your role is not permitted on this device.' };
+
+  const token = await createToken({ sub: staff.id, org: staff.organization_id, role: staff.role, branch: staff.assigned_branch_id, email: staff.email });
+  await createStaffSession(staff, token, { deviceId: device.id, ip: deviceContext.ip, userAgent: deviceContext.userAgent });
+  return staffResult(staff, token);
+}
 
 export async function authenticateByPin(email: string, pin: string, deviceContext?: { deviceId: string; organizationId: string; branchId: string | null }): Promise<AuthResult> { const sql = getSql(); const rows = await sql`SELECT id,name,email,role,branch,assigned_branch_id,organization_id,pin_argon2,status FROM staff WHERE lower(email)=${email.toLowerCase().trim()} LIMIT 1`; if (!rows.length) return { success: false, error: 'Invalid email or PIN' }; const staff = rows[0] as any; if (staff.status !== 'active') return { success: false, error: 'Account is not active' }; if (!deviceContext) return { success: false, error: 'A registered device is required' }; const deviceRows = await sql`SELECT id,organization_id,branch_id,status,trust_status,allowed_roles FROM devices WHERE id=${deviceContext.deviceId} LIMIT 1`; if (!deviceRows.length) return { success: false, error: 'Registered device not found' }; const device = deviceRows[0] as any; if (device.status !== 'active' || device.trust_status === 'revoked') return { success: false, error: 'Device is not active' }; if (device.organization_id !== deviceContext.organizationId) return { success: false, error: 'Device is not registered to this restaurant' }; if ((device.branch_id || null) !== (deviceContext.branchId || null)) return { success: false, error: 'Device branch does not match authentication context' }; const allowedRoles = Array.isArray(device.allowed_roles) ? device.allowed_roles : []; if (allowedRoles.length && !allowedRoles.includes(staff.role)) return { success: false, error: 'Your role is not permitted on this device' }; if (staff.organization_id !== device.organization_id) return { success: false, error: 'Device is not registered to this restaurant' }; if (device.branch_id && staff.assigned_branch_id !== device.branch_id) return { success: false, error: 'Device is not registered to your branch' }; if (!device.branch_id && staff.assigned_branch_id) return { success: false, error: 'Branch-bound staff must use a registered branch device' }; const lockout = await sql`SELECT failed_attempts,locked_until FROM staff_pin_lockouts WHERE staff_id=${staff.id} LIMIT 1`; if (lockout.length) { const lo = lockout[0] as any; const t = lo.locked_until instanceof Date ? lo.locked_until.getTime() : Number(lo.locked_until || 0); if (t > Date.now()) return { success: false, error: `Account locked. Try again in ${Math.ceil((t-Date.now())/60000)} minutes` }; } const valid = !!staff.pin_argon2 && await verifyPassword(staff.pin_argon2, pin); if (!valid) { const attempts = lockout.length ? Number((lockout[0] as any).failed_attempts || 0) + 1 : 1; const until = attempts >= 5 ? new Date(Date.now() + 15*60000) : new Date(0); await sql`INSERT INTO staff_pin_lockouts(staff_id,failed_attempts,locked_until) VALUES(${staff.id},${attempts},${until}) ON CONFLICT(staff_id) DO UPDATE SET failed_attempts=EXCLUDED.failed_attempts,locked_until=EXCLUDED.locked_until`; return { success: false, error: attempts >= 5 ? 'Too many failed attempts. Account locked for 15 minutes' : 'Invalid email or PIN' }; } await sql`DELETE FROM staff_pin_lockouts WHERE staff_id=${staff.id}`; await sql`UPDATE staff_sessions SET status='revoked', revoked_at=NOW(), revoked_reason='staff_switch' WHERE device_id=${deviceContext.deviceId} AND status='active'`; const token = await createToken({ sub: staff.id, org: staff.organization_id, role: staff.role, branch: staff.assigned_branch_id, email: staff.email }); await createStaffSession(staff, token, { deviceId: deviceContext.deviceId }); return staffResult(staff, token); }
 
-export async function getSession(token: string): Promise<AuthResult> {
-  const payload = await verifyToken(token);
-  if (!payload?.sub || !payload.org || !payload.role) return { success: false, error: 'Invalid or expired token' };
-  const sql = getSql();
-
-  // Platform identity is authoritative in super_admins, even for older sessions.
-  const superAdminRows = await sql`
-    SELECT id,name,email,is_active
-    FROM super_admins
-    WHERE id=${payload.sub} OR lower(email)=${payload.email.toLowerCase().trim()}
-    LIMIT 1
-  `;
-  if (superAdminRows.length) {
-    const admin = superAdminRows[0] as any;
-    if (!admin.is_active) return { success: false, error: 'Platform account is inactive' };
-    if (admin.email.toLowerCase() !== payload.email.toLowerCase()) return { success: false, error: 'Session identity changed' };
-    return { success: true, staff: { id: admin.id, name: admin.name, email: admin.email, role: 'super_admin', branch: '', assignedBranchId: null, assigned_branch_id: null, organizationId: 'super-admin', organization_id: SUPER_ADMIN_ORG, status: 'active' } };
-  }
-
-  if (!(await assertSessionActive(token, payload))) return { success: false, error: 'Session revoked or expired' };
-  const rows = await sql`SELECT id,name,email,role,branch,assigned_branch_id,organization_id,status FROM staff WHERE id=${payload.sub} LIMIT 1`;
-  if (!rows.length || (rows[0] as any).status !== 'active') return { success: false, error: 'Staff not found or inactive' };
-  const staff = rows[0] as any;
-  if (staff.organization_id !== payload.org || staff.role !== payload.role || (staff.assigned_branch_id || null) !== (payload.branch || null) || staff.email !== payload.email) return { success: false, error: 'Session is no longer valid' };
-  return staffResult(staff);
-}
-
+export async function getSession(token: string): Promise<AuthResult> { const payload = await verifyToken(token); if (!payload?.sub || !payload.org || !payload.role) return { success: false, error: 'Invalid or expired token' }; const sql = getSql(); const superAdminRows = await sql`SELECT id,name,email,is_active FROM super_admins WHERE id=${payload.sub} OR lower(email)=${payload.email.toLowerCase().trim()} LIMIT 1`; if (superAdminRows.length) { const admin = superAdminRows[0] as any; if (!admin.is_active) return { success: false, error: 'Platform account is inactive' }; if (admin.email.toLowerCase() !== payload.email.toLowerCase()) return { success: false, error: 'Session identity changed' }; return { success: true, staff: { id: admin.id, name: admin.name, email: admin.email, role: 'super_admin', branch: '', assignedBranchId: null, assigned_branch_id: null, organizationId: 'super-admin', organization_id: SUPER_ADMIN_ORG, status: 'active' } }; } if (!(await assertSessionActive(token, payload))) return { success: false, error: 'Session revoked or expired' }; const rows = await sql`SELECT id,name,email,role,branch,assigned_branch_id,organization_id,status FROM staff WHERE id=${payload.sub} LIMIT 1`; if (!rows.length || (rows[0] as any).status !== 'active') return { success: false, error: 'Staff not found or inactive' }; const staff = rows[0] as any; if (staff.organization_id !== payload.org || staff.role !== payload.role || (staff.assigned_branch_id || null) !== (payload.branch || null) || staff.email !== payload.email) return { success: false, error: 'Session is no longer valid' }; return staffResult(staff); }
 export async function authenticateSuperAdmin(email: string, password: string): Promise<AuthResult> { const sql = getSql(); const rows = await sql`SELECT id,name,email,password_hash,is_active FROM super_admins WHERE lower(email)=${email.toLowerCase().trim()} LIMIT 1`; if (!rows.length) return { success: false, error: 'Invalid email or password' }; const admin = rows[0] as any; if (!admin.is_active || !(await verifyPassword(admin.password_hash,password))) return { success: false, error: 'Invalid email or password' }; await sql`UPDATE super_admins SET last_login_at=NOW() WHERE id=${admin.id}`; const token = await createToken({ sub: admin.id, org: SUPER_ADMIN_ORG, role: 'super_admin', branch: null, email: admin.email }); return { success: true, token, staff: { id: admin.id, name: admin.name, email: admin.email, role: 'super_admin', branch: '', assignedBranchId: null, assigned_branch_id: null, organizationId: 'super-admin', organization_id: SUPER_ADMIN_ORG, status: 'active' } }; }
-
 export async function getUserFromRequest(request: Request): Promise<TokenPayload | null> { const authorization = request.headers.get('authorization'); const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]; const cookie = request.headers.get('cookie')?.match(/(?:^|;\s*)krown_session=([^;]+)/)?.[1]; const token = bearer || cookie; if (!token) return null; const decoded = decodeURIComponent(token); const payload = await verifyToken(decoded); if (!payload) return null; const session = await getSession(decoded); if (!session.success || !session.staff) return null; if (session.staff.organizationId === 'super-admin') return { ...payload, sub: session.staff.id, org: SUPER_ADMIN_ORG, role: 'super_admin', branch: null, email: session.staff.email }; return { ...payload, sub: session.staff.id, org: session.staff.organizationId, role: canonicalRole(session.staff.role), branch: session.staff.assignedBranchId, email: session.staff.email }; }
