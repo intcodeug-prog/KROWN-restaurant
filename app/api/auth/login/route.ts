@@ -18,6 +18,18 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
+    // Restaurant Admin is intentionally device-independent: authenticate directly first.
+    // Other staff roles fall through to the registered-device challenge.
+    const directStaffResult = await authenticateStaff(normalizedEmail, String(password));
+    if (directStaffResult.success && directStaffResult.token && directStaffResult.staff) {
+      const response = NextResponse.json({ data: { token: directStaffResult.token, staff: directStaffResult.staff } });
+      response.cookies.set('krown_session', directStaffResult.token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 24, path: '/' });
+      return response;
+    }
+    if (directStaffResult.error !== 'This computer is not activated. Activate this device before signing in.') {
+      return NextResponse.json({ data: null, error: directStaffResult.error || 'Invalid email or password' }, { status: 401 });
+    }
+
     const deviceId = String(body.deviceId || '').trim();
     const deviceProof = body.deviceProof && typeof body.deviceProof === 'object' ? body.deviceProof : null;
     if (!deviceId || !deviceProof?.challenge || !deviceProof?.signature) return NextResponse.json({ data: null, error: 'This computer is not activated. Activate this device before signing in.' }, { status: 403 });
