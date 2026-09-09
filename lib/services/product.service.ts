@@ -82,19 +82,24 @@ export async function createProduct(
   const sql = getSql();
   await setTenantContext(sql, ctx.organizationId);
 
-  // Check subscription limit
-  const countRows = await sql`SELECT COUNT(*)::int as count FROM products WHERE organization_id = ${ctx.organizationId}`;
+  // Menu limits are branch-scoped. This prevents one busy branch from
+  // consuming the entire organization's menu allowance and blocking another
+  // branch, while preserving the subscription limit itself.
+  const targetBranchId = input.branchId || ctx.branchId || null;
+  const countRows = targetBranchId
+    ? await sql`SELECT COUNT(*)::int as count FROM products WHERE organization_id = ${ctx.organizationId} AND branch_id = ${targetBranchId}`
+    : await sql`SELECT COUNT(*)::int as count FROM products WHERE organization_id = ${ctx.organizationId} AND branch_id IS NULL`;
   const currentCount = (countRows[0] as any).count;
   const limitCheck = await checkSubscriptionLimit(ctx.organizationId, 'menu_items', currentCount);
   if (!limitCheck.allowed) {
-    throw new Error(`Subscription limit reached: ${limitCheck.current}/${limitCheck.limit} menu items. Please upgrade your plan.`);
+    throw new Error(`Subscription limit reached: ${limitCheck.current}/${limitCheck.limit} menu items for this branch. Please upgrade your plan.`);
   }
 
   const id = generateId();
 
   await sql`
     INSERT INTO products (id, organization_id, name, price, category, image, available, requires_kitchen, description, branch_id, linked_ingredient_id, deduct_from_inventory, inventory_deduct_amount, created_at, updated_at)
-    VALUES (${id}, ${ctx.organizationId}, ${input.name}, ${input.price}, ${input.category}, ${input.image || ''}, ${input.available ?? true}, ${input.requiresKitchen ?? true}, ${input.description || null}, ${input.branchId || ctx.branchId}, ${input.linkedIngredientId || null}, ${input.deductFromInventory ?? false}, ${input.inventoryDeductAmount ?? 0}, NOW(), NOW())
+    VALUES (${id}, ${ctx.organizationId}, ${input.name}, ${input.price}, ${input.category}, ${input.image || ''}, ${input.available ?? true}, ${input.requiresKitchen ?? true}, ${input.description || null}, ${targetBranchId}, ${input.linkedIngredientId || null}, ${input.deductFromInventory ?? false}, ${input.inventoryDeductAmount ?? 0}, NOW(), NOW())
   `;
 
   await logAudit(ctx.userId, 'product.create', { productId: id, name: input.name }, ctx.organizationId, ctx.branchId);
