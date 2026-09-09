@@ -58,11 +58,28 @@ export function KrownAuthGate() {
   async function handlePasswordLogin() {
     if (!email.trim() || !password) return setError('Enter your email and password.');
     if (password.length < 5) return setError('Password must be at least 5 characters.');
-    const currentDeviceId = getDeviceId();
-    if (!currentDeviceId) { setMode('activate'); return setError('Activate this computer before signing in.'); }
     setBusy(true); setError('');
     try {
-      // One fast challenge/signature round-trip proves the private key belongs to this browser/device.
+      // First attempt is intentionally device-independent. Super Admin and Restaurant Admin
+      // accounts can authenticate from any computer. Device-bound staff only proceed to the
+      // activation/challenge flow when the server explicitly requires it.
+      const directResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+      const directJson = await directResponse.json();
+      if (directResponse.ok && directJson?.data?.staff && directJson?.data?.token) {
+        finishLogin(profileFromStaff(directJson.data.staff), directJson.data.token, directJson.data.deviceId);
+        return;
+      }
+
+      const activationRequired = directJson?.error === 'This computer is not activated. Activate this device before signing in.';
+      if (!activationRequired) throw new Error(directJson?.error || 'Unable to sign in');
+
+      const currentDeviceId = getDeviceId();
+      if (!currentDeviceId) { setMode('activate'); throw new Error('This computer is not activated. Activate this device before signing in.'); }
+
       const deviceProof = await createDeviceProof(currentDeviceId);
       const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim().toLowerCase(), password, deviceId: currentDeviceId, deviceProof }) });
       const json = await response.json();
