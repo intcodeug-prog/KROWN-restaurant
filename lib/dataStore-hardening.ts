@@ -56,7 +56,20 @@ if (typeof window !== 'undefined') {
   store.updateStaffStatus = async function(id:string,status:any){ try{ await api.staff.updateStatus(id,status); await refresh(); return true; }catch(error){ console.error('[KROWN] Staff status failed:',error); await refresh().catch(()=>{}); return false; } };
   store.updateStaffRole = async function(id:string,role:any){ try{ await api.staff.updateRole(id,role); await refresh(); return dataStore.getStaff().find((s:any)=>s.id===id)||null; }catch(error){ console.error('[KROWN] Staff role failed:',error); await refresh().catch(()=>{}); return null; } };
   store.deleteStaff = async function(id:string){ try{ await api.staff.delete(id); await refresh(); return true; }catch(error){ console.error('[KROWN] Staff delete failed:',error); await refresh().catch(()=>{}); return false; } };
-  store.addBranch = async function(data:any){ try{ await api.branches.create(data); await refresh(); return dataStore.getBranches().find((b:any)=>b.name===data.name)||null; }catch(error){ console.error('[KROWN] Branch create failed:',error); await refresh().catch(()=>{}); return null; } };
+  store.addBranch = async function(data:any){
+    try {
+      const response = await api.branches.create(data);
+      await refresh();
+      const branchId = response?.data?.id || response?.id;
+      return branchId
+        ? dataStore.getBranches().find((b:any)=>b.id===branchId) || null
+        : dataStore.getBranches().find((b:any)=>b.name===data.name) || null;
+    } catch(error){
+      console.error('[KROWN] Branch create failed:',error);
+      await refresh().catch(()=>{});
+      throw error;
+    }
+  };
   store.updateBranchStatus = async function(id:string,status:any){ try{ await api.branches.updateStatus(id,status); await refresh(); return true; }catch(error){ console.error('[KROWN] Branch status failed:',error); await refresh().catch(()=>{}); return false; } };
   store.deleteBranch = async function(id:string){ try{ await api.branches.delete(id); await refresh(); return true; }catch(error){ console.error('[KROWN] Branch delete failed:',error); await refresh().catch(()=>{}); return false; } };
   store.addExpense = async function(data:any){ try{ await api.expenses.create(data); await refresh(); return dataStore.getExpenses().find((e:any)=>e.title===data.title)||null; }catch(error){ console.error('[KROWN] Expense create failed:',error); await refresh().catch(()=>{}); return null; } };
@@ -67,7 +80,7 @@ if (typeof window !== 'undefined') {
 
   const baseBreakdown = dataStore.getPaymentBreakdown.bind(dataStore);
   store.getPaymentBreakdown = function(orders:any[]) {
-    const clean=(orders||[]).filter((o:any)=>o.paymentStatus==='paid' && Number(o.paidAmount||0)>0 || o.paymentStatus==='partially_paid' && Number(o.paidAmount||0)>0);
+    const clean=(orders||[]).filter((o:any)=>(o.paymentStatus==='paid' && Number(o.paidAmount||0)>0) || (o.paymentStatus==='partially_paid' && Number(o.paidAmount||0)>0));
     return baseBreakdown(clean);
   };
 }
