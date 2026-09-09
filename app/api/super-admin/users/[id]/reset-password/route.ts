@@ -4,6 +4,8 @@ import { getSql } from '@/lib/neon-server';
 import { hashPassword } from '@/lib/auth';
 import { logAuditEvent } from '@/lib/audit';
 
+const MIN_PASSWORD_LENGTH = 5;
+
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const ctx = extractTenantContext(request);
@@ -16,8 +18,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
   try {
     const { password } = await request.json();
-    if (!password || password.length < 8) {
-      return NextResponse.json({ error: 'Password must be at least 8 characters long' }, { status: 400 });
+    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json({ error: 'Password must be at least 5 characters long' }, { status: 400 });
     }
 
     const staffRows = await sql`SELECT id, name, email, organization_id FROM staff WHERE id = ${userId} LIMIT 1`;
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
     await sql`
       UPDATE staff
-      SET 
+      SET
         password_hash = ${argon2Hash},
         password_argon2 = ${argon2Hash},
         updated_at = NOW()
