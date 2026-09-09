@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { completePasswordReset } from '@/lib/services/password-reset.service';
 
+const MIN_PASSWORD_LENGTH = 5;
+
 export async function POST(request: NextRequest) {
   try {
     const { token, password } = await request.json();
 
     if (!token) return NextResponse.json({ success: false, error: 'Reset token is required' }, { status: 400 });
-    if (!password || password.length < 8) return NextResponse.json({ success: false, error: 'Password must be at least 8 characters' }, { status: 400 });
-
-    // Password strength check
-    const hasUpper = /[A-Z]/.test(password);
-    const hasLower = /[a-z]/.test(password);
-    const hasDigit = /[0-9]/.test(password);
-    if (!hasUpper || !hasLower || !hasDigit) {
-      return NextResponse.json({ success: false, error: 'Password must contain uppercase, lowercase, and a number' }, { status: 400 });
+    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json({ success: false, error: 'Password must be at least 5 characters' }, { status: 400 });
     }
 
     const result = await completePasswordReset(token, password);
