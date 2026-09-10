@@ -8,20 +8,35 @@ function setSessionCookie(response: NextResponse, token: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { pin, deviceId, challenge, signature } = await request.json();
-    if (!pin) return NextResponse.json({ data: null, error: 'PIN is required' }, { status: 400 });
+    const body = await request.json();
+    const pin = String(body.pin || '').trim();
+    const deviceId = String(body.deviceId || '').trim();
+    const challenge = String(body.challenge || '').trim();
+    const signature = String(body.signature || '').trim();
 
-    let context: { deviceId: string; organizationId: string; branchId: string } | undefined;
-    if (deviceId || challenge || signature) {
-      if (!deviceId || !challenge || !signature) return NextResponse.json({ data: null, error: 'Complete registered-device proof is required' }, { status: 400 });
-      const device = await verifyDeviceChallenge(String(deviceId), String(signature), String(challenge));
-      context = { deviceId: device.deviceId, organizationId: device.organizationId, branchId: device.branchId };
+    if (!/^\d{4,6}$/.test(pin)) return NextResponse.json({ data: null, error: 'Enter your 4–6 digit PIN' }, { status: 400 });
+    if (!deviceId || !challenge || !signature) {
+      return NextResponse.json({ data: null, error: 'This computer is not activated. Activate this device before signing in.' }, { status: 403 });
     }
 
-    const result = await authenticateByPinOnly(String(pin), context);
-    if (!result.success || !result.token || !result.staff) return NextResponse.json({ data: null, error: result.error || 'Authentication failed' }, { status: 401 });
+    const device = await verifyDeviceChallenge(deviceId, signature, challenge);
+    const result = await authenticateByPinOnly(pin, {
+      deviceId: device.deviceId,
+      organizationId: device.organizationId,
+      branchId: device.branchId,
+    });
 
-    const response = NextResponse.json({ data: { token: result.token, staff: result.staff, deviceId: context?.deviceId || null, branchId: context?.branchId || result.staff.assignedBranchId || null } });
+    if (!result.success || !result.token || !result.staff) {
+      return NextResponse.json({ data: null, error: result.error || 'Authentication failed' }, { status: 401 });
+    }
+
+    const response = NextResponse.json({ data: {
+      token: result.token,
+      staff: result.staff,
+      deviceId: device.deviceId,
+      organizationId: device.organizationId,
+      branchId: device.branchId,
+    }});
     setSessionCookie(response, result.token);
     return response;
   } catch (e: any) {
