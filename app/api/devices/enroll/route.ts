@@ -4,7 +4,10 @@ import { getSql } from '@/lib/neon-server';
 import { generateId } from '@/lib/id';
 
 function clean(value: unknown, max: number) { return String(value || '').trim().slice(0, max); }
-function requestIp(request: NextRequest) { const forwarded = request.headers.get('x-forwarded-for'); return (forwarded?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || '').slice(0, 120) || null; }
+function requestIp(request: NextRequest) {
+  const forwarded = request.headers.get('x-forwarded-for');
+  return (forwarded?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || '').slice(0, 120) || null;
+}
 function validP256Jwk(value: string) {
   try {
     const key = JSON.parse(value) as any;
@@ -29,39 +32,50 @@ export async function POST(request: NextRequest) {
     const ipAddress = requestIp(request);
 
     if (!token || !credentialId || !credentialPublicKey) {
-      return NextResponse.json({ data: null, error: 'token, credentialId and credentialPublicKey are required' }, { status: 400 });
+      return NextResponse.json({ data: null, error: 'Invalid activation code or device credentials' }, { status: 400 });
     }
     if (!validP256Jwk(credentialPublicKey)) {
-      return NextResponse.json({ data: null, error: 'credentialPublicKey must be a valid P-256 public JWK' }, { status: 400 });
+      return NextResponse.json({ data: null, error: 'Invalid device credentials' }, { status: 400 });
     }
 
     const suppliedFingerprint = clean(body.deviceFingerprint, 512);
     const deviceFingerprint = suppliedFingerprint || createHash('sha256').update(`krown-device:${credentialId}`).digest('hex');
-
     const sql = getSql();
     const tokenHash = createHash('sha256').update(token).digest('hex');
 
-    // Step 1: Claim the enrollment token
+    // Claim the one-time token atomically. The token itself is the authority for
+    // the exact organization, branch and allowed roles; the client cannot choose them.
     const claimed = await sql`UPDATE device_enrollment_tokens
       SET used=true, used_at=NOW()
       WHERE token_hash=${tokenHash} AND used=false AND expires_at>NOW()
       RETURNING organization_id, branch_id, device_type, device_name, allowed_roles, created_by`;
     if (!claimed.length) {
-      return NextResponse.json({ data: null, error: 'Invalid, expired, or already-used enrollment token' }, { status: 409 });
+      return NextResponse.json({ data: null, error: 'Invalid, expired, or already-used activation code' }, { status: 409 });
     }
+
     const enrollment = claimed[0] as any;
     const orgId = enrollment.organization_id;
     const branchId = enrollment.branch_id;
     const allowedRolesJson = JSON.stringify(enrollment.allowed_roles || []);
 
-    // Step 2: Check if a device with this fingerprint already exists in this org
-    const existing = await sql`SELECT id FROM devices
-      WHERE organization_id = ${orgId} AND device_fingerprint = ${deviceFingerprint}
-      LIMIT 1`;
+    // A browser-bound credential/fingerprint may never silently move between
+    // restaurants. This closes the cross-tenant re-enrollment hole where the same
+    // computer could be reassigned simply by presenting another restaurant token.
+    const identityRows = await sql`SELECT id, organization_id, branch_id, status, credential_id
+      FROM devices
+      WHERE credential_id = ${credentialId} OR device_fingerprint = ${deviceFingerprint}
+      ORDER BY created_at ASC
+      LIMIT 2`;
 
+    const foreignBinding = identityRows.find((row: any) => String(row.organization_id) !== String(orgId));
+    if (foreignBinding) {
+      return NextResponse.json({ data: null, error: 'This computer is already activated for another restaurant. Decommission the existing device before assigning it elsewhere.' }, { status: 409 });
+    }
+
+    const existing = identityRows.find((row: any) => String(row.organization_id) === String(orgId));
     let device: any;
-    if (existing.length) {
-      // Step 3a: Re-enroll — update the existing device with new credentials
+
+    if (existing) {
       const updated = await sql`
         UPDATE devices SET
           branch_id = ${branchId},
@@ -84,11 +98,10 @@ export async function POST(request: NextRequest) {
           decommissioned_by = NULL,
           decommissioned_reason = NULL,
           updated_at = NOW()
-        WHERE id = ${existing[0].id}
+        WHERE id = ${existing.id}
         RETURNING id, organization_id, branch_id, public_reference, device_name, device_type, status, trust_status, credential_id, credential_version, enrolled_at, created_at`;
       device = updated[0];
     } else {
-      // Step 3b: First enrollment — insert a new device
       const deviceId = generateId();
       const publicReference = `DEV-${deviceId.replace(/-/g, '').slice(0, 10).toUpperCase()}`;
       const inserted = await sql`
@@ -100,12 +113,9 @@ export async function POST(request: NextRequest) {
       device = inserted[0];
     }
 
-    if (!device) {
-      return NextResponse.json({ data: null, error: 'Device enrollment failed' }, { status: 500 });
-    }
-
+    if (!device) return NextResponse.json({ data: null, error: 'Device activation failed' }, { status: 500 });
     return NextResponse.json({ data: device }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ data: null, error: e?.message || 'Device enrollment failed' }, { status: 400 });
+    return NextResponse.json({ data: null, error: e?.message || 'Device activation failed' }, { status: 400 });
   }
 }
