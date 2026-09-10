@@ -51,7 +51,21 @@ export async function verifyDeviceChallenge(deviceId: string, signatureBase64Url
   try { signature = Buffer.from(signatureBase64Url, 'base64url'); } catch { throw new Error('Invalid device signature'); }
   const valid = verifySignature('sha256', Buffer.from(challenge), { key: publicKey, dsaEncoding: 'ieee-p1363' }, signature);
   if (!valid) throw new Error('Invalid device signature');
-  await sql`UPDATE devices SET auth_challenge=NULL, auth_challenge_expires_at=NULL, last_authenticated_at=NOW(), last_seen_at=NOW(), updated_at=NOW() WHERE id=${deviceId} AND auth_challenge=${challenge}`;
+
+  // Consume the challenge atomically. A concurrent/replayed request can no longer authenticate.
+  const consumed = await sql`
+    UPDATE devices
+    SET auth_challenge=NULL, auth_challenge_expires_at=NULL,
+        last_authenticated_at=NOW(), last_seen_at=NOW(), updated_at=NOW()
+    WHERE id=${deviceId}
+      AND status='active'
+      AND trust_status <> 'revoked'
+      AND auth_challenge=${challenge}
+      AND auth_challenge_expires_at > NOW()
+    RETURNING id
+  `;
+  if (!consumed.length) throw new Error('Device challenge already used or expired');
+
   return { deviceId: device.id, organizationId: device.organization_id, branchId: device.branch_id, credentialId: device.credential_id };
 }
 
