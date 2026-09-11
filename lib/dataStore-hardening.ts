@@ -21,21 +21,18 @@ if (typeof window !== 'undefined') {
       try {
         const profile = JSON.parse(localStorage.getItem('krown_staff_profile') || 'null');
         if (profile?.id && profile?.email && profile?.role) {
-          return new Response(JSON.stringify({
-            session: { user: profile },
-            data: { staff: profile },
-            offline: true,
-          }), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Krown-Offline': 'true' } });
+          return new Response(JSON.stringify({ session: { user: profile }, data: { staff: profile }, offline: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'X-Krown-Offline': 'true' },
+          });
         }
       } catch {}
     }
     return fetchWithOfflineSession(input, init);
   };
 
-  // The app has several callers that can request a refresh at the same time
-  // (login, page bootstrap, mutations and the background order poll). Do not
-  // allow those calls to fan out into duplicate Neon/API requests.
-  const baseRefresh = dataStore.refresh.bind(dataStore);
+  // Prevent duplicate full refreshes from login/bootstrap/mutations.
+  const baseRefresh = store.refresh.bind(dataStore);
   let refreshInFlight: Promise<any> | null = null;
   store.refresh = function() {
     if (refreshInFlight) return refreshInFlight;
@@ -43,10 +40,8 @@ if (typeof window !== 'undefined') {
     return refreshInFlight;
   };
 
-  // The store's background order poll runs more frequently than a restaurant
-  // POS needs and can repeatedly serialize a large order cache. Keep it
-  // responsive while preventing overlapping/rapid requests.
-  const baseRefreshOrders = dataStore.refreshOrders.bind(dataStore);
+  // Throttle the private background order poll without changing its class API.
+  const baseRefreshOrders = store.refreshOrders.bind(dataStore);
   let ordersRefreshInFlight: Promise<any> | null = null;
   let lastOrdersRefreshAt = 0;
   const ORDER_REFRESH_MIN_MS = 2500;
@@ -60,28 +55,13 @@ if (typeof window !== 'undefined') {
   };
 
   const refresh = async () => { await store.refresh(); };
-
   const baseGetOrders = dataStore.getOrders.bind(dataStore);
   store.getOrders = function(branchId?: string, startDate?: number, endDate?: number) {
-    return baseGetOrders(branchId, startDate, endDate).map((o:any) => ({
-      ...o,
-      items: (o.items || []).map((item:any) => ({ ...item, price: Number(item.price ?? item.unitPrice ?? 0) })),
-    }));
+    return baseGetOrders(branchId, startDate, endDate).map((o:any) => ({ ...o, items: (o.items || []).map((item:any) => ({ ...item, price: Number(item.price ?? item.unitPrice ?? 0) })) }));
   };
 
-  store.payOrder = async function(orderId: string, paymentData: any) {
-    try { await api.orders.pay(orderId, paymentData); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null; }
-    catch (error) { console.error('[KROWN] Payment was not persisted:', error); await refresh().catch(()=>{}); return null; }
-  };
-
-  store.addSplitPayment = async function(orderId: string, split: any) {
-    try {
-      const current:any = baseGetOrders().find((o:any)=>o.id===orderId);
-      const splits=[...((current as any)?.splitPayments||[]),{id:crypto.randomUUID(),amount:split.amount,paymentMethod:split.paymentMethod,paidAt:Date.now(),splitIndex:split.splitIndex,totalSplits:split.totalSplits,seatCovered:split.seatCovered,itemsCovered:split.itemsCovered,guestLabel:split.guestLabel,guestItems:split.guestItems}];
-      await api.orders.splitPay(orderId,splits); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null;
-    } catch(error){ console.error('[KROWN] Split payment was not persisted:',error); await refresh().catch(()=>{}); return null; }
-  };
-
+  store.payOrder = async function(orderId: string, paymentData: any) { try { await api.orders.pay(orderId, paymentData); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null; } catch (error) { console.error('[KROWN] Payment was not persisted:', error); await refresh().catch(()=>{}); return null; } };
+  store.addSplitPayment = async function(orderId: string, split: any) { try { const current:any=baseGetOrders().find((o:any)=>o.id===orderId); const splits=[...((current as any)?.splitPayments||[]),{id:crypto.randomUUID(),amount:split.amount,paymentMethod:split.paymentMethod,paidAt:Date.now(),splitIndex:split.splitIndex,totalSplits:split.totalSplits,seatCovered:split.seatCovered,itemsCovered:split.itemsCovered,guestLabel:split.guestLabel,guestItems:split.guestItems}]; await api.orders.splitPay(orderId,splits); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null; } catch(error){ console.error('[KROWN] Split payment was not persisted:',error); await refresh().catch(()=>{}); return null; } };
   store.addItemsToOrder = async function(orderId:string, items:any[]){ try{ await api.orders.addItems(orderId,items); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null; }catch(error){ console.error('[KROWN] Add items failed:',error); await refresh().catch(()=>{}); return null; } };
   store.updateOrderStatus = async function(orderId:string,status:any){ try{ await api.orders.updateStatus(orderId,status); await refresh(); return true; }catch(error){ console.error('[KROWN] Order status update failed:',error); await refresh().catch(()=>{}); return false; } };
   store.updateOrderCustomerTin = async function(orderId:string,tin:string){ try{ await api.orders.updateTin(orderId,tin); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null; }catch(error){ console.error('[KROWN] TIN update failed:',error); await refresh().catch(()=>{}); return null; } };
@@ -110,20 +90,7 @@ if (typeof window !== 'undefined') {
   store.updateStaffStatus = async function(id:string,status:any){ try{ await api.staff.updateStatus(id,status); await refresh(); return true; }catch(error){ console.error('[KROWN] Staff status failed:',error); await refresh().catch(()=>{}); return false; } };
   store.updateStaffRole = async function(id:string,role:any){ try{ await api.staff.updateRole(id,role); await refresh(); return dataStore.getStaff().find((s:any)=>s.id===id)||null; }catch(error){ console.error('[KROWN] Staff role failed:',error); await refresh().catch(()=>{}); return null; } };
   store.deleteStaff = async function(id:string){ try{ await api.staff.delete(id); await refresh(); return true; }catch(error){ console.error('[KROWN] Staff delete failed:',error); await refresh().catch(()=>{}); return false; } };
-  store.addBranch = async function(data:any){
-    try {
-      const response = await api.branches.create(data);
-      await refresh();
-      const branchId = response?.data?.id || response?.id;
-      return branchId
-        ? dataStore.getBranches().find((b:any)=>b.id===branchId) || null
-        : dataStore.getBranches().find((b:any)=>b.name===data.name) || null;
-    } catch(error){
-      console.error('[KROWN] Branch create failed:',error);
-      await refresh().catch(()=>{});
-      throw error;
-    }
-  };
+  store.addBranch = async function(data:any){ try { const response=await api.branches.create(data); await refresh(); const branchId=response?.data?.id||response?.id; return branchId?dataStore.getBranches().find((b:any)=>b.id===branchId)||null:dataStore.getBranches().find((b:any)=>b.name===data.name)||null; } catch(error){ console.error('[KROWN] Branch create failed:',error); await refresh().catch(()=>{}); throw error; } };
   store.updateBranchStatus = async function(id:string,status:any){ try{ await api.branches.updateStatus(id,status); await refresh(); return true; }catch(error){ console.error('[KROWN] Branch status failed:',error); await refresh().catch(()=>{}); return false; } };
   store.deleteBranch = async function(id:string){ try{ await api.branches.delete(id); await refresh(); return true; }catch(error){ console.error('[KROWN] Branch delete failed:',error); await refresh().catch(()=>{}); return false; } };
   store.addExpense = async function(data:any){ try{ await api.expenses.create(data); await refresh(); return dataStore.getExpenses().find((e:any)=>e.title===data.title)||null; }catch(error){ console.error('[KROWN] Expense create failed:',error); await refresh().catch(()=>{}); return null; } };
@@ -131,10 +98,6 @@ if (typeof window !== 'undefined') {
 
   const baseGetZones = dataStore.getZones.bind(dataStore);
   store.getZones = function(branchId?: string) { return baseGetZones(branchId); };
-
   const baseBreakdown = dataStore.getPaymentBreakdown.bind(dataStore);
-  store.getPaymentBreakdown = function(orders:any[]) {
-    const clean=(orders||[]).filter((o:any)=>(o.paymentStatus==='paid' && Number(o.paidAmount||0)>0) || (o.paymentStatus==='partially_paid' && Number(o.paidAmount||0)>0));
-    return baseBreakdown(clean);
-  };
+  store.getPaymentBreakdown = function(orders:any[]) { const clean=(orders||[]).filter((o:any)=>(o.paymentStatus==='paid' && Number(o.paidAmount||0)>0) || (o.paymentStatus==='partially_paid' && Number(o.paidAmount||0)>0)); return baseBreakdown(clean); };
 }
