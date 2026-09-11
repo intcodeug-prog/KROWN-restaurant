@@ -5,7 +5,7 @@ import { OfflineSyncBanner } from '@/components/offline-sync-banner';
 import { KrownAuthOverlay } from '@/components/krown-auth-overlay';
 import { KrownSignOut } from '@/components/krown-sign-out';
 
-const KROWN_LOGO = '/icon.svg';
+const KROWN_LOGO = 'https://iili.io/nK49crl.png';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
@@ -13,9 +13,9 @@ export const metadata: Metadata = {
   description: 'Enterprise Multi-Branch Restaurant POS, Kitchen Display, Financial Analytics & Inventory System',
   manifest: '/manifest.json?v=20260911',
   icons: {
-    icon: [{ url: `${KROWN_LOGO}?v=20260911`, type: 'image/svg+xml' }],
-    shortcut: [{ url: `${KROWN_LOGO}?v=20260911`, type: 'image/svg+xml' }],
-    apple: [{ url: `${KROWN_LOGO}?v=20260911`, type: 'image/svg+xml' }],
+    icon: [{ url: `${KROWN_LOGO}?v=20260911`, type: 'image/png' }],
+    shortcut: [{ url: `${KROWN_LOGO}?v=20260911`, type: 'image/png' }],
+    apple: [{ url: `${KROWN_LOGO}?v=20260911`, type: 'image/png' }],
   },
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'KROWN ERP' }
 };
@@ -29,8 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json?v=20260911" />
-        <link rel="icon" href={`${KROWN_LOGO}?v=20260911`} type="image/svg+xml" />
-        <link rel="shortcut icon" href={`${KROWN_LOGO}?v=20260911`} type="image/svg+xml" />
+        <link rel="icon" href={`${KROWN_LOGO}?v=20260911`} type="image/png" />
+        <link rel="shortcut icon" href={`${KROWN_LOGO}?v=20260911`} type="image/png" />
         <link rel="apple-touch-icon" href={`${KROWN_LOGO}?v=20260911`} />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
