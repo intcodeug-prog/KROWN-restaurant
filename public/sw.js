@@ -1,5 +1,5 @@
-const CACHE_NAME = 'krown-erp-v3-branding';
-const ASSETS_TO_CACHE = ['/','/manifest.json'];
+const CACHE_NAME = 'krown-erp-v4-branding';
+const ASSETS_TO_CACHE = ['/', '/manifest.json', '/krown-logo.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
