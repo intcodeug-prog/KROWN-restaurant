@@ -5,9 +5,9 @@ import { OfflineSyncBanner } from '@/components/offline-sync-banner';
 import { KrownAuthOverlay } from '@/components/krown-auth-overlay';
 import { KrownSignOut } from '@/components/krown-sign-out';
 
+const KROWN_LOGO = 'https://iili.io/nK49crl.png?v=20260911';
+const KROWN_BRANDED = 'https://iili.io/nK495LG.png?v=20260911';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
-const KROWN_LOGO = 'https://iili.io/nK49crl.png';
-const KROWN_BRANDED = 'https://iili.io/nK495LG.png';
 
 export const metadata: Metadata = {
   title: 'KROWN ERP | Multi-Branch Restaurant POS & Management System',
