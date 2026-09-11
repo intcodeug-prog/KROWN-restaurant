@@ -5,8 +5,7 @@ import { OfflineSyncBanner } from '@/components/offline-sync-banner';
 import { KrownAuthOverlay } from '@/components/krown-auth-overlay';
 import { KrownSignOut } from '@/components/krown-sign-out';
 
-const KROWN_LOGO = 'https://iili.io/nK49crl.png?v=20260911';
-const KROWN_BRANDED = 'https://iili.io/nK495LG.png?v=20260911';
+const KROWN_LOGO = '/krown-logo.svg';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
@@ -38,8 +37,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <link rel="icon" href={KROWN_LOGO} type="image/png" />
-        <link rel="shortcut icon" href={KROWN_LOGO} type="image/png" />
+        <link rel="icon" href={KROWN_LOGO} type="image/svg+xml" />
+        <link rel="shortcut icon" href={KROWN_LOGO} type="image/svg+xml" />
         <link rel="apple-touch-icon" href={KROWN_LOGO} />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -54,20 +53,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: `
               (function () {
                 var logo = ${JSON.stringify(KROWN_LOGO)};
-                var branded = ${JSON.stringify(KROWN_BRANDED)};
                 function applyKrownBranding() {
                   document.querySelectorAll('img').forEach(function (img) {
                     var src = img.getAttribute('src') || '';
                     var decoded = src;
                     try { decoded = decodeURIComponent(src); } catch (_) {}
                     if (!decoded.includes('/icon.svg')) return;
-                    var authOverlay = img.closest('.fixed.inset-0.z-\\[9999\\]');
-                    var nextSrc = authOverlay ? branded : logo;
-                    if (img.src !== nextSrc) {
-                      img.removeAttribute('srcset');
-                      img.removeAttribute('sizes');
-                      img.src = nextSrc;
-                    }
+                    img.removeAttribute('srcset');
+                    img.removeAttribute('sizes');
+                    img.src = logo;
                   });
                 }
                 applyKrownBranding();
