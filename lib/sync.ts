@@ -8,15 +8,24 @@
 import { openDB, IDBPDatabase } from 'idb';
 
 const DB_NAME = 'KrownPOS_OfflineDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const QUEUE_STORE = 'op_queue';
 const RESPONSE_STORE = 'response_cache';
-const MAX_RETRIES = 12;
+const MAX_RETRIES = 24;
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface OfflineOp {
-  id?: number; endpoint: string; method: string; body: any; timestamp: number; retries: number;
-  organizationId: string; branchId: string; deviceId: string; staffId: string;
+  id?: number;
+  endpoint: string;
+  method: string;
+  body: any;
+  timestamp: number;
+  retries: number;
+  organizationId: string;
+  branchId: string;
+  deviceId: string;
+  staffId: string;
+  clientOpId: string;
 }
 interface CachedResponse { key: string; status: number; headers: Record<string, string>; body: string; cachedAt: number; }
 
@@ -89,7 +98,12 @@ async function extractBody(input: RequestInfo | URL, init?: RequestInit): Promis
   return undefined;
 }
 
-function queuedResponse() { return new Response(JSON.stringify({ queued: true, offline: true }), { status: 202, headers: { 'Content-Type': 'application/json', 'X-Krown-Queued': 'true' } }); }
+function queuedResponse() {
+  return new Response(JSON.stringify({ queued: true, offline: true }), {
+    status: 202,
+    headers: { 'Content-Type': 'application/json', 'X-Krown-Queued': 'true' },
+  });
+}
 
 function installFetchInterceptor() {
   if (fetchInterceptorInstalled || typeof window === 'undefined') return;
@@ -109,7 +123,10 @@ function installFetchInterceptor() {
 
     try {
       const response = await nativeFetch!(input, init);
-      if (isReadRequest(method)) { if (response.ok) await cacheResponse(absoluteUrl, response); return response; }
+      if (isReadRequest(method)) {
+        if (response.ok) await cacheResponse(absoluteUrl, response);
+        return response;
+      }
       if (response.ok || !isQueueableWrite(method, path) || !isTransientHttpStatus(response.status)) return response;
       await queueOfflineOp({ endpoint: pathAndQuery(absoluteUrl), method, body: await extractBody(input, init) });
       return queuedResponse();
@@ -125,7 +142,14 @@ export async function queueOfflineOp(op: { endpoint: string; method: string; bod
   try {
     const context = currentContext();
     if (!context.organizationId || !context.deviceId) throw new Error('No activated tenant/device context');
-    await (await getDB()).add(QUEUE_STORE, { ...op, timestamp: Date.now(), retries: 0, ...context } satisfies OfflineOp);
+    const clientOpId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await (await getDB()).add(QUEUE_STORE, {
+      ...op,
+      timestamp: Date.now(),
+      retries: 0,
+      clientOpId,
+      ...context,
+    } satisfies OfflineOp);
     await notifySyncListeners();
     if (navigator.onLine) setTimeout(() => syncOfflineQueue().catch(() => undefined), 100);
   } catch (e) { console.warn('[KROWN Offline] local persistence unavailable:', e); }
@@ -150,12 +174,31 @@ export async function syncOfflineQueue(): Promise<{ synced: number; failed: numb
       if (Date.now() - op.timestamp > MAX_AGE_MS) { await db.delete(QUEUE_STORE, op.id!); failed++; continue; }
       try {
         const token = localStorage.getItem('krown_session_token') || '';
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers.Authorization = `Bearer ${token}`;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'X-Krown-Offline-Op-Id': op.clientOpId,
+        };
+        if (token && !token.startsWith('offline:')) headers.Authorization = `Bearer ${token}`;
+
         // Always bypass the interceptor while replaying, otherwise a transient
         // 5xx would enqueue the same operation a second time.
-        const response = await (nativeFetch || window.fetch)(op.endpoint, { method: op.method, headers, credentials: 'include', ...(op.body !== undefined ? { body: JSON.stringify(op.body) } : {}) });
+        const response = await (nativeFetch || window.fetch)(op.endpoint, {
+          method: op.method,
+          headers,
+          credentials: 'include',
+          ...(op.body !== undefined ? { body: JSON.stringify(op.body) } : {}),
+        });
+
         if (response.ok) { await db.delete(QUEUE_STORE, op.id!); synced++; continue; }
+
+        // A queued change must survive an expired/offline session. Do not drop
+        // it on auth failure; once the staff member signs in again, the queue
+        // can be replayed under the newly issued server session.
+        if (response.status === 401 || response.status === 403) {
+          failed++;
+          continue;
+        }
+
         if (!isTransientHttpStatus(response.status)) { await db.delete(QUEUE_STORE, op.id!); failed++; continue; }
         const retries = (op.retries || 0) + 1;
         if (retries >= MAX_RETRIES) await db.delete(QUEUE_STORE, op.id!); else await db.put(QUEUE_STORE, { ...op, retries });
