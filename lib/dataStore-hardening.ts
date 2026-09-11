@@ -30,8 +30,6 @@ if (typeof window !== 'undefined') {
   let refreshInFlight: Promise<any> | null = null;
   store.refresh = function() {
     if (refreshInFlight) return refreshInFlight;
-    // Never wake the whole API refresh pipeline while offline. The local store
-    // is the source for the active offline session until connectivity returns.
     if (!navigator.onLine) return Promise.resolve();
     refreshInFlight = Promise.resolve(baseRefresh()).finally(() => { refreshInFlight = null; });
     return refreshInFlight;
@@ -40,8 +38,6 @@ if (typeof window !== 'undefined') {
   const baseRefreshOrders = store.refreshOrders.bind(dataStore);
   let ordersRefreshInFlight: Promise<any> | null = null;
   let lastOrdersRefreshAt = 0;
-  // Restaurant POS does not need a 2-second 500-order database poll. This was
-  // repeatedly serializing localStorage and competing with user interactions.
   const ORDER_REFRESH_MIN_MS = 10000;
   store.refreshOrders = function(...args: any[]) {
     if (!navigator.onLine) return Promise.resolve();
@@ -53,8 +49,6 @@ if (typeof window !== 'undefined') {
     return ordersRefreshInFlight;
   };
 
-  // Authentication no longer reloads the entire PWA. Hydrate the already-mounted
-  // store when the auth gate completes instead.
   window.addEventListener('krown-authenticated', () => {
     if (navigator.onLine) store.refresh().catch(() => undefined);
     else store.notify?.();
@@ -63,7 +57,24 @@ if (typeof window !== 'undefined') {
   const refresh = async () => { await store.refresh(); };
   const baseGetOrders = dataStore.getOrders.bind(dataStore);
   store.getOrders = function(branchId?: string, startDate?: number, endDate?: number) {
-    return baseGetOrders(branchId, startDate, endDate).map((o:any) => ({ ...o, items: (o.items || []).map((item:any) => ({ ...item, price: Number(item.price ?? item.unitPrice ?? 0) })) }));
+    const orders = baseGetOrders(branchId, startDate, endDate);
+    if (!branchId || branchId === 'all') {
+      return orders.map((o:any) => ({ ...o, items: (o.items || []).map((item:any) => ({ ...item, price: Number(item.price ?? item.unitPrice ?? 0) })) }));
+    }
+
+    // Production data has historically stored the branch on orders as either
+    // restaurantId or branchName. Match both forms so cashier daily totals do
+    // not disappear simply because the order was created by an older client.
+    const branches = dataStore.getBranches?.() || [];
+    const branch = branches.find((b:any) => b.id === branchId || String(b.name || '').toLowerCase() === String(branchId).toLowerCase());
+    const targetName = String(branch?.name || branchId).trim().toLowerCase();
+    const targetId = branch?.id || branchId;
+    const robustOrders = (dataStore.getOrders(undefined, startDate, endDate) || []).filter((o:any) => {
+      const orderBranchId = String(o.restaurantId || '').trim();
+      const orderBranchName = String(o.branchName || '').trim().toLowerCase();
+      return orderBranchId === String(targetId) || orderBranchName === targetName;
+    });
+    return robustOrders.map((o:any) => ({ ...o, items: (o.items || []).map((item:any) => ({ ...item, price: Number(item.price ?? item.unitPrice ?? 0) })) }));
   };
 
   store.payOrder = async function(orderId: string, paymentData: any) { try { await api.orders.pay(orderId, paymentData); await refresh(); return baseGetOrders().find((o:any)=>o.id===orderId)||null; } catch (error) { console.error('[KROWN] Payment was not persisted:', error); await refresh().catch(()=>{}); return null; } };
