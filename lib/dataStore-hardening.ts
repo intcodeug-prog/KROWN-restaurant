@@ -6,6 +6,32 @@ import { api } from '@/lib/neon-client';
 if (typeof window !== 'undefined') {
   const store = dataStore as any;
 
+  // When the device is intentionally offline, AppRouter must not treat the
+  // unavailable server session endpoint as a logout. The real credential was
+  // already verified/cached by the device-bound offline auth flow. This local
+  // session response is only synthesized while the browser itself is offline;
+  // online authentication still always goes through the server.
+  const fetchWithOfflineSession = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+      window.location.origin,
+    );
+    if (url.pathname === '/api/auth/session' && !navigator.onLine) {
+      try {
+        const profile = JSON.parse(localStorage.getItem('krown_staff_profile') || 'null');
+        if (profile?.id && profile?.email && profile?.role) {
+          return new Response(JSON.stringify({
+            session: { user: profile },
+            data: { staff: profile },
+            offline: true,
+          }), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Krown-Offline': 'true' } });
+        }
+      } catch {}
+    }
+    return fetchWithOfflineSession(input, init);
+  };
+
   // The app has several callers that can request a refresh at the same time
   // (login, page bootstrap, mutations and the background order poll). Do not
   // allow those calls to fan out into duplicate Neon/API requests.
