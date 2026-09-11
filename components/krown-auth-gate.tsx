@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
-import { ShieldCheck, Smartphone, Eye, EyeOff, AlertCircle, ScanLine, WifiOff } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, ScanLine, ShieldCheck, Smartphone, WifiOff } from 'lucide-react';
 import { activateDevice, createDeviceProof, getDeviceId } from '@/lib/device-auth-client';
 import { verifyOfflineCredentials, verifyOfflinePin, storeOfflinePasswordHash, storeOfflinePin, cacheOfflineAuth } from '@/lib/offlineAuth';
 
 type StaffProfile = { id: string; name: string; email: string; role: string; branch?: string; assignedBranchId?: string | null; organizationId?: string | null; status?: string; avatar?: string };
 type Mode = 'pin' | 'password' | 'activate';
+const KROWN_LOGO = 'https://iili.io/nK49crl.png';
 const KROWN_SUPPORT_WHATSAPP = '+256789649710';
 
 export function KrownAuthGate() {
@@ -22,6 +22,7 @@ export function KrownAuthGate() {
   const [deviceId, setDeviceId] = useState<string | null>(() => getDeviceId());
   const [activationPin, setActivationPin] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [scanAvailable] = useState(() => typeof window !== 'undefined' && 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -33,10 +34,16 @@ export function KrownAuthGate() {
       setVisible(window.location.pathname === '/' && !authenticated);
       setDeviceId(getDeviceId());
     };
+    const onlineHandler = () => setOnline(true);
+    const offlineHandler = () => setOnline(false);
     refresh();
     window.addEventListener('storage', refresh);
+    window.addEventListener('online', onlineHandler);
+    window.addEventListener('offline', offlineHandler);
     return () => {
       window.removeEventListener('storage', refresh);
+      window.removeEventListener('online', onlineHandler);
+      window.removeEventListener('offline', offlineHandler);
       if (scanTimerRef.current) window.clearInterval(scanTimerRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
@@ -54,17 +61,7 @@ export function KrownAuthGate() {
   }, [password]);
 
   function profileFromStaff(s: any): StaffProfile {
-    return {
-      id: s.id,
-      name: s.name || 'Staff',
-      email: s.email || '',
-      role: s.role,
-      branch: s.branch || 'Branch',
-      assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null,
-      organizationId: s.organization_id || s.organizationId || null,
-      status: s.status || 'active',
-      avatar: s.avatar,
-    };
+    return { id: s.id, name: s.name || 'Staff', email: s.email || '', role: s.role, branch: s.branch || 'Branch', assignedBranchId: s.assigned_branch_id || s.assignedBranchId || null, organizationId: s.organization_id || s.organizationId || null, status: s.status || 'active', avatar: s.avatar };
   }
 
   function finishLogin(staff: StaffProfile, token: string, returnedDeviceId?: string | null) {
@@ -74,66 +71,57 @@ export function KrownAuthGate() {
     if (staff.assignedBranchId) localStorage.setItem('krown_branch_id', staff.assignedBranchId);
     if (returnedDeviceId) localStorage.setItem('krown_device_id', returnedDeviceId);
     sessionStorage.setItem('krown_active_session', 'true');
+    // Do NOT reload the PWA after authentication. The previous hard reload caused
+    // the visible flash and could race the auth overlay/AppRouter. Reveal the
+    // already-mounted application immediately and let it hydrate from local cache.
     setVisible(false);
-    window.location.reload();
+    window.dispatchEvent(new CustomEvent('krown-authenticated', { detail: { staffId: staff.id, organizationId: staff.organizationId, branchId: staff.assignedBranchId } }));
   }
 
   async function handlePinLogin() {
     if (!/^\d{4,6}$/.test(pin)) { setError('Enter your 4–6 digit PIN.'); return; }
+    if (!isActivated) { setError('This computer is not activated for a restaurant or branch.'); return; }
     setBusy(true); setError('');
     try {
-      if (!navigator.onLine) {
+      if (!online) {
         const cached = await verifyOfflinePin(pin);
         if (!cached) throw new Error('Wrong PIN for this activated restaurant or branch.');
         finishLogin(profileFromStaff(cached.staff), `offline:${cached.deviceId}:${Date.now()}`, cached.deviceId);
         return;
       }
-
-      if (!deviceId) throw new Error('This computer is not activated for a restaurant or branch.');
-      const proof = await createDeviceProof(deviceId);
-      const response = await fetch('/api/auth/pin-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin, deviceId, challenge: proof.challenge, signature: proof.signature }),
-      });
+      const proof = await createDeviceProof(deviceId!);
+      const response = await fetch('/api/auth/pin-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin, deviceId, challenge: proof.challenge, signature: proof.signature }) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json?.data?.staff || !json?.data?.token) throw new Error(json?.error || 'Wrong PIN for this restaurant or branch.');
       const staff = profileFromStaff(json.data.staff);
       await cacheOfflineAuth(staff);
       await storeOfflinePin(staff, pin);
       finishLogin(staff, json.data.token, json.data.deviceId);
-    } catch (e: any) {
-      setError(e?.message || 'Unable to sign in.');
-    } finally { setBusy(false); }
+    } catch (e: any) { setError(e?.message || 'Unable to sign in.'); }
+    finally { setBusy(false); }
   }
 
   async function handlePasswordLogin() {
     if (!email.trim() || !password) { setError('Enter your email and password.'); return; }
+    if (!isActivated) { setError('This computer is not activated for a restaurant or branch.'); return; }
     setBusy(true); setError('');
     try {
-      if (!navigator.onLine) {
+      if (!online) {
         const cached = await verifyOfflineCredentials(email, password);
         if (!cached) throw new Error('Wrong email or password for this activated restaurant or branch.');
         finishLogin(profileFromStaff(cached.staff), `offline:${cached.deviceId}:${Date.now()}`, cached.deviceId);
         return;
       }
-
-      if (!deviceId) throw new Error('This computer is not activated for a restaurant or branch.');
-      const proof = await createDeviceProof(deviceId);
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password, deviceId, deviceProof: proof }),
-      });
+      const proof = await createDeviceProof(deviceId!);
+      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim().toLowerCase(), password, deviceId, deviceProof: proof }) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json?.data?.staff || !json?.data?.token) throw new Error(json?.error || 'Wrong email or password for this restaurant or branch.');
       const staff = profileFromStaff(json.data.staff);
       await cacheOfflineAuth(staff);
       await storeOfflinePasswordHash(staff.email, password);
       finishLogin(staff, json.data.token, json.data.deviceId);
-    } catch (e: any) {
-      setError(e?.message || 'Unable to sign in.');
-    } finally { setBusy(false); }
+    } catch (e: any) { setError(e?.message || 'Unable to sign in.'); }
+    finally { setBusy(false); }
   }
 
   async function activate() {
@@ -145,12 +133,9 @@ export function KrownAuthGate() {
       localStorage.setItem('krown_device_id', data.id);
       if (data.organization_id) localStorage.setItem('krown_organization_id', data.organization_id);
       if (data.branch_id) localStorage.setItem('krown_branch_id', data.branch_id);
-      setDeviceId(data.id);
-      setActivationPin('');
-      setMode('pin');
-    } catch (e: any) {
-      setError(e?.message || 'Invalid activation code for this restaurant or branch.');
-    } finally { setBusy(false); }
+      setDeviceId(data.id); setActivationPin(''); setMode('pin');
+    } catch (e: any) { setError(e?.message || 'Invalid activation code for this restaurant or branch.'); }
+    finally { setBusy(false); }
   }
 
   async function startScanner() {
@@ -173,8 +158,7 @@ export function KrownAuthGate() {
           stopScanner();
           const cleaned = value.trim().replace(/^KROWN-ACTIVATE:/i, '');
           if (!/^\d{8}$/.test(cleaned)) { setError('Invalid activation code.'); return; }
-          setActivationPin(cleaned);
-          setBusy(true);
+          setActivationPin(cleaned); setBusy(true);
           try {
             const data = await activateDevice(cleaned);
             localStorage.setItem('krown_device_id', data.id);
@@ -185,10 +169,7 @@ export function KrownAuthGate() {
           finally { setBusy(false); }
         } catch {}
       }, 300);
-    } catch (e: any) {
-      stopScanner();
-      setError(e?.message || 'Camera unavailable. Enter the activation code instead.');
-    }
+    } catch (e: any) { stopScanner(); setError(e?.message || 'Camera unavailable. Enter the activation code instead.'); }
   }
 
   function stopScanner() {
@@ -204,7 +185,7 @@ export function KrownAuthGate() {
   return <div className="fixed inset-0 z-[9999] min-h-screen flex items-center justify-center bg-[#F4F4F6] dark:bg-[#08080A] p-4 overflow-y-auto">
     <div className="w-full max-w-md rounded-[2rem] bg-white/95 dark:bg-[#121216]/95 backdrop-blur-2xl border border-black/5 dark:border-white/10 shadow-2xl p-6 sm:p-8">
       <div className="flex flex-col items-center text-center mb-7">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 p-1 shadow-xl shadow-orange-500/25 mb-4"><Image src="/icon.svg" alt="KROWN ERP" width={64} height={64} className="w-full h-full rounded-xl object-contain" priority /></div>
+        <div className="w-16 h-16 rounded-2xl bg-white dark:bg-[#1D1D22] p-2 shadow-xl mb-4"><img src={KROWN_LOGO} alt="KROWN ERP" width={64} height={64} className="w-full h-full rounded-xl object-contain" /></div>
         <h1 className="text-2xl font-black text-slate-900 dark:text-white">KROWN ERP</h1>
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">Secure restaurant staff access</p>
       </div>
@@ -220,7 +201,7 @@ export function KrownAuthGate() {
       {mode === 'pin' && <div className="space-y-5">
         <div className="text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider"><ShieldCheck className="w-3.5 h-3.5" /> {isActivated ? 'Activated device' : 'Device not activated'}</div>
-          {!navigator.onLine && <div className="inline-flex items-center gap-1 ml-2 px-2 py-1 rounded-full bg-slate-500/10 text-slate-500 text-[10px] font-black"><WifiOff className="w-3 h-3" /> Offline</div>}
+          {!online && <div className="inline-flex items-center gap-1 ml-2 px-2 py-1 rounded-full bg-slate-500/10 text-slate-500 text-[10px] font-black"><WifiOff className="w-3 h-3" /> Offline</div>}
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-3">Enter your staff PIN</p>
         </div>
         <input autoFocus type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))} onKeyDown={e => e.key === 'Enter' && handlePinLogin()} placeholder="••••" className="w-full text-center tracking-[0.45em] text-3xl font-black bg-slate-50 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-2xl py-5 outline-none focus:ring-2 focus:ring-orange-500/40" />
