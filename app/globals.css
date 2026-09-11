@@ -15,6 +15,18 @@
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 .animate-shimmer { background: linear-gradient(90deg, transparent 0%, rgba(249,115,22,0.08) 50%, transparent 100%); background-size: 200% 100%; animation: shimmer 2s ease-in-out infinite; }
 
+/* KROWN branding: legacy logo references now resolve to the same hosted favicon logo. */
+img[src="/icon.svg"] { content: url("https://iili.io/nK49crl.png"); }
+
+/* Replace the Admin dashboard's old orange Store mark with the KROWN logo. */
+aside > div:first-child .w-10.h-10.rounded-2xl.bg-orange-500 {
+  background-image: url("https://iili.io/nK49crl.png");
+  background-size: cover;
+  background-position: center;
+  background-color: transparent;
+}
+aside > div:first-child .w-10.h-10.rounded-2xl.bg-orange-500 > svg { display: none; }
+
 @media print {
   @page { size: A4 portrait; margin: 12mm; }
   html, body { width: 210mm; min-height: 297mm; }
