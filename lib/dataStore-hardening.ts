@@ -6,11 +6,6 @@ import { api } from '@/lib/neon-client';
 if (typeof window !== 'undefined') {
   const store = dataStore as any;
 
-  // When the device is intentionally offline, AppRouter must not treat the
-  // unavailable server session endpoint as a logout. The real credential was
-  // already verified/cached by the device-bound offline auth flow. This local
-  // session response is only synthesized while the browser itself is offline;
-  // online authentication still always goes through the server.
   const fetchWithOfflineSession = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(
@@ -31,21 +26,25 @@ if (typeof window !== 'undefined') {
     return fetchWithOfflineSession(input, init);
   };
 
-  // Prevent duplicate full refreshes from login/bootstrap/mutations.
   const baseRefresh = store.refresh.bind(dataStore);
   let refreshInFlight: Promise<any> | null = null;
   store.refresh = function() {
     if (refreshInFlight) return refreshInFlight;
+    // Never wake the whole API refresh pipeline while offline. The local store
+    // is the source for the active offline session until connectivity returns.
+    if (!navigator.onLine) return Promise.resolve();
     refreshInFlight = Promise.resolve(baseRefresh()).finally(() => { refreshInFlight = null; });
     return refreshInFlight;
   };
 
-  // Throttle the private background order poll without changing its class API.
   const baseRefreshOrders = store.refreshOrders.bind(dataStore);
   let ordersRefreshInFlight: Promise<any> | null = null;
   let lastOrdersRefreshAt = 0;
-  const ORDER_REFRESH_MIN_MS = 2500;
+  // Restaurant POS does not need a 2-second 500-order database poll. This was
+  // repeatedly serializing localStorage and competing with user interactions.
+  const ORDER_REFRESH_MIN_MS = 10000;
   store.refreshOrders = function(...args: any[]) {
+    if (!navigator.onLine) return Promise.resolve();
     if (ordersRefreshInFlight) return ordersRefreshInFlight;
     const now = Date.now();
     if (now - lastOrdersRefreshAt < ORDER_REFRESH_MIN_MS) return Promise.resolve();
@@ -53,6 +52,13 @@ if (typeof window !== 'undefined') {
     ordersRefreshInFlight = Promise.resolve(baseRefreshOrders(...args)).finally(() => { ordersRefreshInFlight = null; });
     return ordersRefreshInFlight;
   };
+
+  // Authentication no longer reloads the entire PWA. Hydrate the already-mounted
+  // store when the auth gate completes instead.
+  window.addEventListener('krown-authenticated', () => {
+    if (navigator.onLine) store.refresh().catch(() => undefined);
+    else store.notify?.();
+  });
 
   const refresh = async () => { await store.refresh(); };
   const baseGetOrders = dataStore.getOrders.bind(dataStore);
