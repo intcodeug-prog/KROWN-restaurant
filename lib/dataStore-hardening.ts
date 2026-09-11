@@ -5,7 +5,35 @@ import { api } from '@/lib/neon-client';
 
 if (typeof window !== 'undefined') {
   const store = dataStore as any;
-  const refresh = async () => { await dataStore.refresh(); };
+
+  // The app has several callers that can request a refresh at the same time
+  // (login, page bootstrap, mutations and the background order poll). Do not
+  // allow those calls to fan out into duplicate Neon/API requests.
+  const baseRefresh = dataStore.refresh.bind(dataStore);
+  let refreshInFlight: Promise<any> | null = null;
+  store.refresh = function() {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = Promise.resolve(baseRefresh()).finally(() => { refreshInFlight = null; });
+    return refreshInFlight;
+  };
+
+  // The store's background order poll runs more frequently than a restaurant
+  // POS needs and can repeatedly serialize a large order cache. Keep it
+  // responsive while preventing overlapping/rapid requests.
+  const baseRefreshOrders = dataStore.refreshOrders.bind(dataStore);
+  let ordersRefreshInFlight: Promise<any> | null = null;
+  let lastOrdersRefreshAt = 0;
+  const ORDER_REFRESH_MIN_MS = 2500;
+  store.refreshOrders = function(...args: any[]) {
+    if (ordersRefreshInFlight) return ordersRefreshInFlight;
+    const now = Date.now();
+    if (now - lastOrdersRefreshAt < ORDER_REFRESH_MIN_MS) return Promise.resolve();
+    lastOrdersRefreshAt = now;
+    ordersRefreshInFlight = Promise.resolve(baseRefreshOrders(...args)).finally(() => { ordersRefreshInFlight = null; });
+    return ordersRefreshInFlight;
+  };
+
+  const refresh = async () => { await store.refresh(); };
 
   const baseGetOrders = dataStore.getOrders.bind(dataStore);
   store.getOrders = function(branchId?: string, startDate?: number, endDate?: number) {
