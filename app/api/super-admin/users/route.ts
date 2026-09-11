@@ -33,11 +33,25 @@ export async function GET(request: NextRequest) {
   try {
     const searchPattern = search ? `%${search}%` : null;
     const users = await sql`
-      SELECT s.id, s.name, s.email, s.phone, s.role, s.status, s.assigned_branch_id, s.organization_id,
-             s.created_at, s.last_login_at, o.name as organization_name, b.name as branch_name
+      SELECT
+        s.id,
+        s.name,
+        s.email,
+        s.phone,
+        s.role,
+        s.status,
+        s.assigned_branch_id,
+        s.organization_id,
+        s.created_at,
+        s.last_login_at,
+        o.name AS organization_name,
+        b.id AS branch_id,
+        b.name AS branch_name,
+        b.location AS branch_location,
+        b.city AS branch_city
       FROM staff s
       LEFT JOIN organizations o ON o.id = s.organization_id
-      LEFT JOIN branches b ON b.id = s.assigned_branch_id
+      LEFT JOIN branches b ON b.id = s.assigned_branch_id AND b.organization_id = s.organization_id
       WHERE (${searchPattern}::text IS NULL OR s.name ILIKE ${searchPattern} OR s.email ILIKE ${searchPattern} OR s.phone ILIKE ${searchPattern})
         AND (${role} = 'all' OR lower(s.role) = lower(${role}))
         AND (${status} = 'all' OR lower(s.status) = lower(${status}))
@@ -49,7 +63,9 @@ export async function GET(request: NextRequest) {
         AND (${role} = 'all' OR lower(s.role) = lower(${role}))
         AND (${status} = 'all' OR lower(s.status) = lower(${status}))
         AND (${orgId}::text = 'all' OR s.organization_id::text = ${orgId})`;
-    return NextResponse.json({ data: users, meta: { total: Number(countResult[0]?.total ?? 0), page, limit } });
+    const response = NextResponse.json({ data: users, meta: { total: Number(countResult[0]?.total ?? 0), page, limit } });
+    response.headers.set('Cache-Control', 'no-store, max-age=0');
+    return response;
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to fetch users' }, { status: 500 });
   }
