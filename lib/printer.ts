@@ -64,16 +64,19 @@ export function generateFormattedThermalReceipt(
     return text;
   }
 
-  const dateStr = new Date(order.createdAt || Date.now()).toLocaleString();
-  const branchName = order.branchName || 'Main Branch';
-  const branchAddress = order.branchAddress || order.branchLocation || order.location || 'Kampala, Uganda';
-  const branchPhone = order.branchPhone || '';
-  const branchTaxId = order.branchTaxId || '';
+  // Receipt identity is tenant/branch data captured during onboarding and resolved from
+  // the authoritative order. Never fall back to a platform label when the restaurant is known.
+  const restaurantName = order.organizationName || order.organization_name || order.restaurantName || order.restaurant_name || '';
+  const branchName = order.branchName || order.branch_name || '';
+  const branchAddress = order.branchAddress || order.branch_address || order.branchLocation || order.branch_location || order.location || '';
+  const branchPhone = order.branchPhone || order.branch_phone || '';
+  const branchTaxId = order.branchTaxId || order.branch_tax_id || '';
+  const dateStr = new Date(order.createdAt || order.created_at || Date.now()).toLocaleString();
   const total = order.total || 0;
   let text = '';
-  text += centerText('KROWN ERP') + '\n';
-  text += centerText(branchName.toUpperCase()) + '\n';
-  text += centerText(branchAddress) + '\n';
+  text += centerText(String(restaurantName || branchName || 'Restaurant').toUpperCase()) + '\n';
+  if (branchName && String(branchName).toUpperCase() !== String(restaurantName).toUpperCase()) text += centerText(String(branchName).toUpperCase()) + '\n';
+  if (branchAddress) text += centerText(String(branchAddress)) + '\n';
   if (branchPhone) text += centerText(branchTaxId ? `TEL: ${branchPhone} | TIN: ${branchTaxId}` : `TEL: ${branchPhone}`) + '\n';
   else if (branchTaxId) text += centerText(`TIN: ${branchTaxId}`) + '\n';
   text += doubleDivider + '\n';
@@ -81,7 +84,7 @@ export function generateFormattedThermalReceipt(
   else if (ticketType === 'split' && splitData) text += centerText(`*** SPLIT RECEIPT (${splitData.splitIndex}/${splitData.totalSplits}) ***`) + '\n';
   else text += centerText('*** OFFICIAL PAYMENT RECEIPT ***') + '\n';
   text += formatLine('ORDER NUMBER:', `#${(order.id || '').toUpperCase()}`) + '\n';
-  text += formatLine('TABLE ID:', `${order.table || 'T1'}`) + '\n';
+  text += formatLine('TABLE ID:', `${order.table || order.table_number || 'T1'}`) + '\n';
   text += formatLine('SEATING AREA:', `${order.place || 'Main Dining'}`) + '\n';
   text += formatLine('SEAT / COVER:', `${order.seat || 'Whole Table'}`) + '\n';
   text += formatLine('ORDER TYPE:', `${order.type || 'Dine In'}`) + '\n';
@@ -90,14 +93,14 @@ export function generateFormattedThermalReceipt(
     if (splitData.guestLabel) text += formatLine('GUEST:', splitData.guestLabel) + '\n';
     text += formatLine('PAYMENT METHOD:', splitData.paymentMethod) + '\n';
     if (splitData.seatCovered) text += formatLine('SPLIT SEAT:', splitData.seatCovered) + '\n';
-  } else if (ticketType === 'receipt') text += formatLine('PAYMENT METHOD:', order.paymentMethod || 'Paid') + '\n';
-  if (order.tinNumber && ticketType === 'receipt') text += formatLine('CUSTOMER TIN:', order.tinNumber) + '\n';
-  if (order.isCorporateCredit || order.paymentMethod === 'Corporate Credit') {
+  } else if (ticketType === 'receipt') text += formatLine('PAYMENT METHOD:', order.paymentMethod || order.payment_method || 'Paid') + '\n';
+  if ((order.tinNumber || order.tin_number) && ticketType === 'receipt') text += formatLine('CUSTOMER TIN:', order.tinNumber || order.tin_number) + '\n';
+  if (order.isCorporateCredit || order.is_corporate_credit || order.paymentMethod === 'Corporate Credit' || order.payment_method === 'Corporate Credit') {
     text += divider + '\n';
     text += centerText('*** CORPORATE CREDIT ACCOUNT ***') + '\n';
-    text += formatLine('Company:', order.companyName || 'Corporate Client') + '\n';
-    if (order.companyStaffName) text += formatLine('Billed Staff:', order.companyStaffName) + '\n';
-    if (order.workId) text += formatLine('Staff Work ID:', order.workId) + '\n';
+    text += formatLine('Company:', order.companyName || order.company_name || 'Corporate Client') + '\n';
+    if (order.companyStaffName || order.company_staff_name) text += formatLine('Billed Staff:', order.companyStaffName || order.company_staff_name) + '\n';
+    if (order.workId || order.work_id) text += formatLine('Staff Work ID:', order.workId || order.work_id) + '\n';
   }
   text += divider + '\n';
   text += formatLine('ITEM DESCRIPTION', 'PRICE') + '\n';
@@ -114,12 +117,12 @@ export function generateFormattedThermalReceipt(
     order.items.forEach((item: any) => {
       const itemTitle = `${item.quantity}x ${item.name}`;
       const addOnsTotal = (item.addOns || []).reduce((s: number, a: any) => s + (a.price * (item.quantity || 1)), 0);
-      const itemPriceStr = formatUGX(((item.price || 0) * item.quantity) + addOnsTotal);
+      const itemPriceStr = formatUGX(((item.price || item.unitPrice || 0) * item.quantity) + addOnsTotal);
       const wrappedLines = wrapText(itemTitle, lineCharLength - itemPriceStr.length - 2);
       text += formatLine(wrappedLines[0], itemPriceStr) + '\n';
       for (let i = 1; i < wrappedLines.length; i++) text += wrappedLines[i] + '\n';
       if (item.addOns?.length) item.addOns.forEach((a: any) => text += formatLine(`   + ${a.name}`, formatUGX(a.price * (item.quantity || 1))) + '\n');
-      if (item.note) text += '  ' + wrapText(`(Note: ${item.note})`, lineCharLength - 4).join('\n  ') + '\n';
+      if (item.note || item.notes) text += '  ' + wrapText(`(Note: ${item.note || item.notes})`, lineCharLength - 4).join('\n  ') + '\n';
     });
   }
   text += divider + '\n';
@@ -139,8 +142,8 @@ export function generateFormattedThermalReceipt(
     text += centerText('*** CUSTOMER BILL - UNPAID ***') + '\n';
   } else {
     text += formatLine('TOTAL AMOUNT PAID:', formatUGX(total)) + '\n';
-    if (order.amountReceived) text += formatLine('CASH RECEIVED:', formatUGX(order.amountReceived)) + '\n';
-    if (order.change !== undefined) text += formatLine('CHANGE DUE:', formatUGX(order.change)) + '\n';
+    if (order.amountReceived || order.amount_received) text += formatLine('CASH RECEIVED:', formatUGX(order.amountReceived || order.amount_received)) + '\n';
+    if (order.change !== undefined || order.change_amount !== undefined) text += formatLine('CHANGE DUE:', formatUGX(order.change !== undefined ? order.change : order.change_amount)) + '\n';
     text += doubleDivider + '\n';
     text += centerText('*** PAID - THANK YOU ***') + '\n';
   }
@@ -198,9 +201,6 @@ export async function printTicket(
   const dbType = typeMap[ticketType] || 'CUSTOMER_RECEIPT';
   const destination = `${kind === 'kitchen' ? 'Kitchen' : 'Receipt'} Printer`;
 
-  // The previous implementation generated a browser-only ID and then called POST /api/print-jobs,
-  // whose server intentionally generates its own authoritative ID. That left the bridge and status
-  // endpoint referring to an ID that did not exist in Neon, making the Print button appear to do nothing.
   const serverJob = await createServerPrintJob({ orderId: order.id, type: dbType, destination, printerId: kind, payload: formattedText });
   const cfg = getPrinterConfig();
   await sendToNetworkPrinter(formattedText, kind, serverJob.id, order.id, dbType, paperWidth);
