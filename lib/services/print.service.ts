@@ -4,6 +4,7 @@ import { setTenantContext } from '@/lib/tenant';
 import { generateId } from '@/lib/id';
 
 export interface PrintJobInput {
+  id?: string;
   orderId?: string;
   type: string;
   destination: string;
@@ -27,13 +28,9 @@ export interface PrintJob {
   created_at: any;
 }
 
-export async function listPrintJobs(
-  ctx: TenantContext,
-  orderId?: string
-): Promise<PrintJob[]> {
+export async function listPrintJobs(ctx: TenantContext, orderId?: string): Promise<PrintJob[]> {
   const sql = getSql();
   await setTenantContext(sql, ctx.organizationId);
-
   if (orderId) {
     const rows = await sql`
       SELECT * FROM print_jobs
@@ -42,7 +39,6 @@ export async function listPrintJobs(
     ` as PrintJob[];
     return rows;
   }
-
   const rows = await sql`
     SELECT * FROM print_jobs
     WHERE organization_id = ${ctx.organizationId}
@@ -51,14 +47,13 @@ export async function listPrintJobs(
   return rows;
 }
 
-export async function createPrintJob(
-  ctx: TenantContext,
-  input: PrintJobInput
-): Promise<PrintJob> {
+export async function createPrintJob(ctx: TenantContext, input: PrintJobInput): Promise<PrintJob> {
   const sql = getSql();
   await setTenantContext(sql, ctx.organizationId);
 
-  const id = generateId();
+  // The browser creates the ID before dispatching to the local bridge. Preserve it so
+  // the bridge, Neon queue and status-reconciliation endpoint all reference one job.
+  const id = input.id || generateId();
 
   const rows = await sql`
     INSERT INTO print_jobs (
@@ -91,30 +86,16 @@ export async function updatePrintJobStatus(
 ): Promise<PrintJob | null> {
   const sql = getSql();
   await setTenantContext(sql, ctx.organizationId);
-
   const setClauses: string[] = ['status = $1'];
   const values: any[] = [status];
   let paramIdx = 2;
-
-  if (details?.attempts !== undefined) {
-    setClauses.push(`attempts = $${paramIdx++}`);
-    values.push(details.attempts);
-  }
-  if (details?.lastError !== undefined) {
-    setClauses.push(`last_error = $${paramIdx++}`);
-    values.push(details.lastError);
-  }
-  if (details?.printedAt !== undefined) {
-    setClauses.push(`printed_at = $${paramIdx++}`);
-    values.push(details.printedAt);
-  }
-
+  if (details?.attempts !== undefined) { setClauses.push(`attempts = $${paramIdx++}`); values.push(details.attempts); }
+  if (details?.lastError !== undefined) { setClauses.push(`last_error = $${paramIdx++}`); values.push(details.lastError); }
+  if (details?.printedAt !== undefined) { setClauses.push(`printed_at = $${paramIdx++}`); values.push(details.printedAt); }
   values.push(jobId, ctx.organizationId);
-
   const rows = await sql(
     `UPDATE print_jobs SET ${setClauses.join(', ')} WHERE id = $${paramIdx} AND organization_id = $${paramIdx + 1} RETURNING *`,
     values
   ) as PrintJob[];
-
   return rows.length > 0 ? rows[0] : null;
 }
