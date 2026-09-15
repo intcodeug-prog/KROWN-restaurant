@@ -21,14 +21,22 @@
 import http from 'node:http';
 import net from 'node:net';
 import { execFile, execFileSync } from 'node:child_process';
-import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
 
 const PORT = Number(process.env.KROWN_PRINT_BRIDGE_PORT || process.argv[2] || 9101);
 const IS_WIN = process.platform === 'win32';
 
+function setCors(res) {
+  // The bridge is bound to loopback only, so the browser may safely call it
+  // from the KROWN HTTPS origin. CORS must be present on normal responses too,
+  // not only OPTIONS preflight responses.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+}
+
 function json(res, status, body) {
+  setCors(res);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
 }
@@ -129,7 +137,7 @@ function discoverWindowsPrinters() {
       network: Boolean(p.Network),
       offline: Boolean(p.WorkOffline),
       status: p.PrinterStatus,
-      likelyThermal: /thermal|receipt|xprinter|xprinter|rongta|epson|pos|bixolon|star|citizen|gprinter|80mm|58mm/i.test(`${p.Name} ${p.DriverName} ${p.PortName}`),
+      likelyThermal: /thermal|receipt|xprinter|rongta|epson|pos|bixolon|star|citizen|gprinter|80mm|58mm/i.test(`${p.Name} ${p.DriverName} ${p.PortName}`),
     }));
   } catch {
     return [];
@@ -214,7 +222,8 @@ async function testPrinter(payload) {
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' });
+      setCors(res);
+      res.writeHead(204);
       return res.end();
     }
     if (req.method === 'GET' && req.url === '/health') return json(res, 200, { ok: true, service: 'krown-print-bridge', version: 2, platform: process.platform });
