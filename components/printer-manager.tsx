@@ -40,6 +40,9 @@ export default function PrinterManager({ organizationId = 'local', branchId = 'l
   useEffect(() => {
     const saved = loadSaved().filter(p => p.organizationId === organizationId && p.branchId === branchId);
     const timer = window.setTimeout(() => setPrinters(saved), 0);
+    // Discovery updates UI state asynchronously from the local print engine.
+    // The lint rule flags invoking a stateful async callback directly in an effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void discover();
     return () => window.clearTimeout(timer);
   }, [organizationId, branchId, discover]);
