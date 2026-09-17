@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CircleAlert, Loader2, Network, Plus, Printer, RefreshCw, Settings2, Usb, Wifi, X } from 'lucide-react';
+import { CircleAlert, Loader2, Network, Plus, Printer, RefreshCw, Usb, Wifi, X } from 'lucide-react';
 import type { DiscoveredPrinter, PrinterConfig, PrinterDestination, PrinterConnection } from '@/lib/printing/printer-types';
 
 const BRIDGE = 'http://127.0.0.1:9101';
@@ -37,7 +37,12 @@ export default function PrinterManager({ organizationId = 'local', branchId = 'l
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { setPrinters(loadSaved().filter(p => p.organizationId === organizationId && p.branchId === branchId)); discover(); }, [organizationId, branchId, discover]);
+  useEffect(() => {
+    const saved = loadSaved().filter(p => p.organizationId === organizationId && p.branchId === branchId);
+    const timer = window.setTimeout(() => setPrinters(saved), 0);
+    void discover();
+    return () => window.clearTimeout(timer);
+  }, [organizationId, branchId, discover]);
 
   const thermal = useMemo(() => discovered.filter(p => p.likelyThermal), [discovered]);
 
