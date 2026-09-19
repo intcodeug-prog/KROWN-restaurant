@@ -173,6 +173,12 @@ function findPrinterInterface(device: USBDeviceLike): { interfaceNumber: number;
 async function prepareUsb(device: USBDeviceLike) {
   if (!device.opened) await device.open();
 
+  try {
+    if (!device.configuration) await device.selectConfiguration(1);
+  } catch {
+    // The device may already have an active configuration.
+  }
+
   const target = findPrinterInterface(device);
 
   if (!target) {
