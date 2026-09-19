@@ -12,6 +12,11 @@ export interface PrinterConfig {
   usbPrinterName?: string;
   ipAddress?: string;
   port?: number;
+  protocol?: 'browser-direct-usb' | 'browser-direct-serial' | 'epson-epos' | 'raw-tcp-bridge';
+  vendorId?: number;
+  productId?: number;
+  serialNumber?: string;
+  deviceId?: string;
   paperWidth: '58mm' | '80mm';
   enabled: boolean;
   status: PrinterStatus;
