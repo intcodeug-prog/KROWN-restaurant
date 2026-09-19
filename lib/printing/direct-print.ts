@@ -173,21 +173,7 @@ function findPrinterInterface(device: USBDeviceLike): { interfaceNumber: number;
 async function prepareUsb(device: USBDeviceLike) {
   if (!device.opened) await device.open();
 
-  const configurations = device.configurations || [];
-  if (configurations.length && !device.opened) {
-    await device.selectConfiguration(1);
-  }
-
-  let target = findPrinterInterface(device);
-
-  if (!target) {
-    try {
-      if (configurations.length) await device.selectConfiguration(1);
-    } catch {
-      // Some devices are already configured by the browser/OS.
-    }
-    target = findPrinterInterface(device);
-  }
+  const target = findPrinterInterface(device);
 
   if (!target) {
     throw new Error('KROWN could not find a writable USB printer interface. Windows may already own this printer through its printer driver.');
