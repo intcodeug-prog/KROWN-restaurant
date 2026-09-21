@@ -29,9 +29,10 @@ export async function POST(request: NextRequest) {
     if (!branchId) return NextResponse.json({ error: 'Branch is required' }, { status: 400 });
     await assertBranchAccess(ctx, branchId);
     const product = await createProduct(ctx, {
-      name: body.name, price: body.price, category: body.category, image: body.image,
+      name: body.name, price: body.price, category: body.category, categoryId: body.categoryId, image: body.image,
       available: body.available, requiresKitchen: body.requiresKitchen, description: body.description,
       branchId, linkedIngredientId: body.linkedIngredientId, deductFromInventory: body.deductFromInventory,
+      addOns: Array.isArray(body.addOns) ? body.addOns : [],
       inventoryDeductAmount: body.inventoryDeductAmount,
     });
     return NextResponse.json({ data: product }, { status: 201 });
