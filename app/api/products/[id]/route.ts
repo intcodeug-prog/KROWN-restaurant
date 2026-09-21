@@ -31,7 +31,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!existing) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     if (branchForbidden(ctx, existing)) return NextResponse.json({ error: 'Forbidden: product belongs to another branch' }, { status: 403 });
     const body = await request.json();
-    const product = await updateProduct(ctx, id, { name: body.name, price: body.price, category: body.category, image: body.image, available: body.available, requires_kitchen: body.requiresKitchen, description: body.description, linked_ingredient_id: body.linkedIngredientId, deduct_from_inventory: body.deductFromInventory, inventory_deduct_amount: body.inventoryDeductAmount });
+    const product = await updateProduct(ctx, id, { name: body.name, price: body.price, category: body.category, category_id: body.categoryId, image: body.image, available: body.available, requires_kitchen: body.requiresKitchen, description: body.description, linked_ingredient_id: body.linkedIngredientId, deduct_from_inventory: body.deductFromInventory, inventory_deduct_amount: body.inventoryDeductAmount, add_ons: Array.isArray(body.addOns) ? body.addOns : undefined });
     return NextResponse.json({ data: product });
   } catch (error: any) {
     const status = String(error?.message || '').startsWith('Forbidden') ? 403 : 500;
