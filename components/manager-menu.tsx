@@ -5,6 +5,7 @@ import { Search, Plus, Edit3, Image as ImageIcon, Loader2, Trash2, X, ChevronDow
 import { vibrate, getCategoryIcon } from '@/lib/utils';
 import { formatUGX } from '@/lib/mockData';
 import { dataStore } from '@/lib/dataStore';
+import { api } from '@/lib/neon-client';
 
 export default function ManagerMenu({ products, user, branchId }: { products: any[], user: any, branchId?: string }) {
   const [search, setSearch] = useState('');
@@ -29,6 +30,8 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
   const [showCatsModal, setShowCatsModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [customCats, setCustomCats] = useState<string[]>(() => dataStore.getCustomCategories());
+  const [categoryRecords, setCategoryRecords] = useState<any[]>([]);
+  const [categoryLoading, setCategoryLoading] = useState(false);
 
   useEffect(() => {
     const unsub = dataStore.subscribe(() => {
@@ -36,6 +39,23 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
       setCustomCats(dataStore.getCustomCategories());
     });
     return () => unsub();
+  }, [managerBranchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCategoryLoading(true);
+    api.categories.list()
+      .then((res: any) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        setCategoryRecords(rows);
+        setCustomCats(rows.map((c: any) => c.name).filter(Boolean));
+      })
+      .catch((error: any) => {
+        console.error('[ManagerMenu] Category load failed:', error);
+      })
+      .finally(() => { if (!cancelled) setCategoryLoading(false); });
+    return () => { cancelled = true; };
   }, [managerBranchId]);
 
   const allCategories = useMemo(() => {
@@ -48,19 +68,44 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
     return allCategories.filter(c => c.toLowerCase().includes(catSearchText.trim().toLowerCase()));
   }, [allCategories, catSearchText]);
 
-  const handleAddCat = (e: React.FormEvent) => {
+  const handleAddCat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName.trim()) return;
-    dataStore.addCustomCategory(newCatName);
-    setCustomCats(dataStore.getCustomCategories());
-    setNewCatName('');
-    vibrate(20);
+    const name = newCatName.trim();
+    if (!name || categoryLoading) return;
+    setCategoryLoading(true);
+    try {
+      const existing = categoryRecords.find((c: any) => String(c.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (existing) {
+        setNewCatName('');
+        return;
+      }
+      const res = await api.categories.create({ name });
+      const created = res?.data;
+      if (!created?.id) throw new Error('Category was not returned by the server');
+      setCategoryRecords(prev => [...prev, created]);
+      setCustomCats(prev => Array.from(new Set([...prev, created.name])));
+      setNewCatName('');
+      vibrate(20);
+    } catch (error: any) {
+      console.error('[ManagerMenu] Category create failed:', error);
+      alert(error?.message || 'Failed to save category. Please try again.');
+    } finally {
+      setCategoryLoading(false);
+    }
   };
 
-  const handleDeleteCat = (cat: string) => {
-    vibrate(30);
-    dataStore.deleteCustomCategory(cat);
-    setCustomCats(dataStore.getCustomCategories());
+  const handleDeleteCat = async (cat: string) => {
+    const record = categoryRecords.find((c: any) => String(c.name || '').trim().toLowerCase() === cat.trim().toLowerCase());
+    if (!record?.id) return;
+    try {
+      await api.categories.delete(record.id);
+      setCategoryRecords(prev => prev.filter((c: any) => c.id !== record.id));
+      setCustomCats(prev => prev.filter(c => c.toLowerCase() !== cat.trim().toLowerCase()));
+      vibrate(30);
+    } catch (error: any) {
+      console.error('[ManagerMenu] Category delete failed:', error);
+      alert(error?.message || 'Failed to delete category. Please try again.');
+    }
   };
 
   const [formData, setFormData] = useState({
@@ -119,6 +164,7 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
         name: formData.name,
         price: parseFloat(formData.price),
         category: formData.category as any,
+        categoryId: categoryRecords.find((c: any) => String(c.name || '').trim().toLowerCase() === String(formData.category || '').trim().toLowerCase())?.id,
         description: formData.description.trim() || undefined,
         image: formData.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
         branchId: managerBranchId ?? undefined,
@@ -131,15 +177,18 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
       let targetProductId = '';
       if (isEditing) {
         targetProductId = isEditing.id;
-        dataStore.updateProduct(isEditing.id, productPayload);
+        const updated = await dataStore.updateProduct(isEditing.id, productPayload);
+        if (updated === false) throw new Error('Menu item could not be saved to the database');
       } else {
-        const newProduct = dataStore.addProduct(productPayload);
+        const newProduct = await dataStore.addProduct(productPayload);
+        if (!newProduct?.id) throw new Error('Menu item was not saved to the database');
         targetProductId = newProduct.id;
       }
 
       // Save recipe ingredients mapping to database and local store
       const validRecipe = recipe.filter(r => r.ingredientId && r.quantityPerUnit > 0);
-      await dataStore.saveProductIngredients(targetProductId, validRecipe, managerBranchId || undefined);
+      const recipeSaved = await dataStore.saveProductIngredients(targetProductId, validRecipe, managerBranchId || undefined);
+      if (recipeSaved === false) throw new Error('Menu item saved, but recipe could not be saved. Please retry before leaving this screen.');
 
       setIsEditing(null);
       setIsAdding(false);
@@ -359,7 +408,17 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
                               type="button"
                               onClick={() => {
                                 const newCat = catSearchText.trim();
-                                dataStore.addCustomCategory(newCat);
+                                api.categories.create({ name: newCat })
+                                  .then((res: any) => {
+                                    const created = res?.data;
+                                    if (!created?.id) throw new Error('Category was not saved');
+                                    setCategoryRecords(prev => [...prev, created]);
+                                    setCustomCats(prev => Array.from(new Set([...prev, created.name])));
+                                  })
+                                  .catch((error: any) => {
+                                    console.error('[ManagerMenu] Inline category create failed:', error);
+                                    alert(error?.message || 'Failed to save category.');
+                                  });
                                 setFormData(prev => ({ ...prev, category: newCat }));
                                 setIsCatDropdownOpen(false);
                                 setCatSearchText('');
@@ -554,7 +613,7 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
                   type="submit" 
                   className="bg-orange-500 hover:bg-orange-600 text-white px-4 rounded-xl text-xs font-bold transition-all active:scale-95"
                 >
-                  Add
+                  {categoryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
                 </button>
               </form>
 
