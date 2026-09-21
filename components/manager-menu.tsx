@@ -111,7 +111,7 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
       if (!created?.id) throw new Error('Category was not saved');
       setCategoryRecords(prev => [...prev, created]);
       setCustomCats(prev => Array.from(new Set([...prev, created.name])));
-      setFormData(prev => ({ ...prev, category: created.name, categoryId: created.id }));
+      setFormData(prev => ({ ...prev, category: created.name }));
       setIsCatDropdownOpen(false);
       setCatSearchText('');
       vibrate(20);
