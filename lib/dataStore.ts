@@ -168,7 +168,7 @@ function fromDbOrder(r: any): Order {
 
 function toDbProduct(p: Product): any {
   return {
-    id: p.id, name: p.name, price: p.price, category: p.category,
+    id: p.id, name: p.name, price: p.price, category: p.category, category_id: p.categoryId ?? null,
     image: p.image, available: p.available,
     requires_kitchen: p.requiresKitchen ?? true, description: p.description ?? null,
     branch_id: p.branchId ?? null, branch_name: p.branchName ?? null,
@@ -180,7 +180,7 @@ function toDbProduct(p: Product): any {
 
 function fromDbProduct(r: any): Product {
   return {
-    id: r.id, name: r.name, price: r.price, category: r.category,
+    id: r.id, name: r.name, price: r.price, category: r.category, categoryId: r.category_id ?? undefined,
     image: r.image, available: r.available, requiresKitchen: r.requires_kitchen ?? true,
     description: r.description, branchId: r.branch_id, branchName: r.branch_name,
     linkedIngredientId: r.linked_ingredient_id ?? undefined,
