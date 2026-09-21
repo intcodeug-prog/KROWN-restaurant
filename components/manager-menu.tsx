@@ -94,6 +94,35 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
     }
   };
 
+  const handleCreateCategoryInline = async () => {
+    const newCat = catSearchText.trim();
+    if (!newCat || categoryLoading) return;
+    setCategoryLoading(true);
+    try {
+      const existing = categoryRecords.find((c: any) => String(c.name || '').trim().toLowerCase() === newCat.toLowerCase());
+      if (existing) {
+        setFormData(prev => ({ ...prev, category: existing.name }));
+        setIsCatDropdownOpen(false);
+        setCatSearchText('');
+        return;
+      }
+      const res = await api.categories.create({ name: newCat });
+      const created = res?.data;
+      if (!created?.id) throw new Error('Category was not saved');
+      setCategoryRecords(prev => [...prev, created]);
+      setCustomCats(prev => Array.from(new Set([...prev, created.name])));
+      setFormData(prev => ({ ...prev, category: created.name, categoryId: created.id }));
+      setIsCatDropdownOpen(false);
+      setCatSearchText('');
+      vibrate(20);
+    } catch (error: any) {
+      console.error('[ManagerMenu] Inline category create failed:', error);
+      alert(error?.message || 'Failed to save category.');
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
   const handleDeleteCat = async (cat: string) => {
     const record = categoryRecords.find((c: any) => String(c.name || '').trim().toLowerCase() === cat.trim().toLowerCase());
     if (!record?.id) return;
@@ -406,23 +435,7 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
                           {catSearchText.trim() && !filteredCategoriesList.some(c => c.toLowerCase() === catSearchText.trim().toLowerCase()) && (
                             <button
                               type="button"
-                              onClick={() => {
-                                const newCat = catSearchText.trim();
-                                api.categories.create({ name: newCat })
-                                  .then((res: any) => {
-                                    const created = res?.data;
-                                    if (!created?.id) throw new Error('Category was not saved');
-                                    setCategoryRecords(prev => [...prev, created]);
-                                    setCustomCats(prev => Array.from(new Set([...prev, created.name])));
-                                  })
-                                  .catch((error: any) => {
-                                    console.error('[ManagerMenu] Inline category create failed:', error);
-                                    alert(error?.message || 'Failed to save category.');
-                                  });
-                                setFormData(prev => ({ ...prev, category: newCat }));
-                                setIsCatDropdownOpen(false);
-                                setCatSearchText('');
-                              }}
+                              onClick={handleCreateCategoryInline}
                               className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-orange-500 hover:bg-orange-500/10 flex items-center gap-2 border border-dashed border-orange-500/30"
                             >
                               <Plus className="w-4 h-4 shrink-0" />
