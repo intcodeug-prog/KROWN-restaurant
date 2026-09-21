@@ -29,7 +29,7 @@ const PORT = Number(process.env.KROWN_PRINT_BRIDGE_PORT || process.argv[2] || 91
 const IS_WIN = process.platform === 'win32';
 
 function json(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' });
   res.end(JSON.stringify(body));
 }
 
