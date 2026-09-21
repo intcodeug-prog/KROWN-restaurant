@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractTenantContext } from '@/lib/tenant';
+import { extractVerifiedTenantContext } from '@/lib/tenant';
 import { updateCategory, deleteCategory } from '@/lib/services/category.service';
 import { hasPermission } from '@/lib/rbac';
 
@@ -8,12 +8,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = extractTenantContext(request);
+    const ctx = await extractVerifiedTenantContext(request);
     if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasPermission(ctx.role, 'products:update')) {
+    if (!hasPermission(ctx.role, 'categories:update')) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -41,7 +41,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasPermission(ctx.role, 'products:delete')) {
+    if (!hasPermission(ctx.role, 'categories:delete')) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
