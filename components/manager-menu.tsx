@@ -42,7 +42,6 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
 
   useEffect(() => {
     let cancelled = false;
-    setCategoryLoading(true);
     api.categories.list()
       .then((res: any) => {
         if (cancelled) return;
