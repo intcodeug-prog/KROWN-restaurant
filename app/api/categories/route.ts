@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractTenantContext } from '@/lib/tenant';
+import { extractVerifiedTenantContext } from '@/lib/tenant';
 import { listCategories, createCategory } from '@/lib/services/category.service';
 import { hasPermission } from '@/lib/rbac';
 
 export async function GET(request: NextRequest) {
   try {
-    const ctx = extractTenantContext(request);
+    const ctx = await extractVerifiedTenantContext(request);
     if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasPermission(ctx.role, 'products:update')) {
+    if (!hasPermission(ctx.role, 'categories:create')) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
