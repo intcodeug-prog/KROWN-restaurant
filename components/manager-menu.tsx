@@ -205,7 +205,7 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
       let targetProductId = '';
       if (isEditing) {
         targetProductId = isEditing.id;
-        const updated = await dataStore.updateProduct(isEditing.id, productPayload);
+        const updated = await (dataStore as any).updateProduct(isEditing.id, productPayload);
         if (updated === false) throw new Error('Menu item could not be saved to the database');
       } else {
         const newProduct = await dataStore.addProduct(productPayload);
@@ -215,7 +215,7 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
 
       // Save recipe ingredients mapping to database and local store
       const validRecipe = recipe.filter(r => r.ingredientId && r.quantityPerUnit > 0);
-      const recipeSaved = await dataStore.saveProductIngredients(targetProductId, validRecipe, managerBranchId || undefined);
+      const recipeSaved = await (dataStore as any).saveProductIngredients(targetProductId, validRecipe, managerBranchId || undefined);
       if (recipeSaved === false) throw new Error('Menu item saved, but recipe could not be saved. Please retry before leaving this screen.');
 
       setIsEditing(null);
