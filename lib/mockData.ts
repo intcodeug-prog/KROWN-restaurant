@@ -10,6 +10,7 @@ export interface Product {
   name: string;
   price: number; // in UGX
   category: string;
+  categoryId?: string;
   image: string;
   available: boolean;
   requiresKitchen?: boolean; // false for canned drinks, water, etc.
