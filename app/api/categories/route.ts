@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
     const categories = await listCategories(ctx);
     return NextResponse.json({ data: categories });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Internal server error' }, { status: 500 });
+    const message = e.message || 'Internal server error';
+    const status = message === 'Category already exists for this branch' ? 409 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
