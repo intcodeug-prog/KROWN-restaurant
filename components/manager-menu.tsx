@@ -36,7 +36,6 @@ export default function ManagerMenu({ products, user, branchId }: { products: an
   useEffect(() => {
     const unsub = dataStore.subscribe(() => {
       setDisplayProducts(dataStore.getProducts(managerBranchId));
-      setCustomCats(dataStore.getCustomCategories());
     });
     return () => unsub();
   }, [managerBranchId]);
