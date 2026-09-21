@@ -48,7 +48,7 @@ export async function createProduct(ctx: TenantContext, input: { name:string; pr
   return rows[0] as Product;
 }
 
-export async function updateProduct(ctx: TenantContext, productId: string, updates: Partial<Pick<Product,'name'|'price'|'category'|'image'|'available'|'requires_kitchen'|'description'|'linked_ingredient_id'|'deduct_from_inventory'|'inventory_deduct_amount'>>): Promise<Product> {
+export async function updateProduct(ctx: TenantContext, productId: string, updates: Partial<Pick<Product,'name'|'price'|'category'|'category_id'|'image'|'available'|'requires_kitchen'|'description'|'linked_ingredient_id'|'deduct_from_inventory'|'inventory_deduct_amount'|'add_ons'>>): Promise<Product> {
   const sql = getSql(); await setTenantContext(sql, ctx.organizationId);
   const existing = await sql`SELECT * FROM products WHERE id = ${productId} AND organization_id = ${ctx.organizationId}`;
   if (!existing.length) throw new Error('Product not found');
