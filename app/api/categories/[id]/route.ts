@@ -38,7 +38,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = extractTenantContext(request);
+    const ctx = await extractVerifiedTenantContext(request);
     if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
