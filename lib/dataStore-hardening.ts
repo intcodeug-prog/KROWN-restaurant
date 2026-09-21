@@ -100,7 +100,19 @@ if (typeof window !== 'undefined') {
   store.toggleCompanyStatus = async function(id:string,status:any){ try{ await api.companies.updateStatus(id,status); await refresh(); return dataStore.getCompanies().find((c:any)=>c.id===id)||null; }catch(error){ console.error('[KROWN] Company status failed:',error); await refresh().catch(()=>{}); return null; } };
   store.settleCompanyBalance = async function(id:string,amount:number,method:any,notes?:string){ try{ await api.companies.settle(id,{amountPaid:amount,paymentMethod:method,notes}); await refresh(); return dataStore.getCompanies().find((c:any)=>c.id===id)||null; }catch(error){ console.error('[KROWN] Company settlement failed:',error); await refresh().catch(()=>{}); return null; } };
 
-  store.addProduct = async function(data:any){ try{ await api.products.create(data); await refresh(); return dataStore.getProducts().find((p:any)=>p.name===data.name)||null; }catch(error){ console.error('[KROWN] Product create failed:',error); await refresh().catch(()=>{}); return null; } };
+  store.addProduct = async function(data:any){
+    try{
+      const response = await api.products.create(data);
+      const created = response?.data;
+      await refresh();
+      if (created?.id) return dataStore.getProducts(data?.branchId).find((p:any)=>p.id===created.id) || created;
+      return dataStore.getProducts(data?.branchId).find((p:any)=>p.name===data.name) || null;
+    }catch(error){
+      console.error('[KROWN] Product create failed:',error);
+      await refresh().catch(()=>{});
+      return null;
+    }
+  };
   store.updateProduct = async function(id:string,updates:any){ try{ await api.products.update(id,updates); await refresh(); return true; }catch(error){ console.error('[KROWN] Product update failed:',error); await refresh().catch(()=>{}); return false; } };
   store.toggleProductAvailability = async function(id:string){ try{ await api.products.toggle(id); await refresh(); return true; }catch(error){ console.error('[KROWN] Product availability update failed:',error); await refresh().catch(()=>{}); return false; } };
   store.addStaffMember = async function(data:any){ try{ await api.staff.create(data); await refresh(); return dataStore.getStaff().find((s:any)=>s.email===data.email)||null; }catch(error){ console.error('[KROWN] Staff create failed:',error); await refresh().catch(()=>{}); return null; } };
