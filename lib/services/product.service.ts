@@ -5,9 +5,9 @@ import { generateId } from '@/lib/id';
 import { logAudit } from '@/lib/audit';
 
 export interface Product {
-  id: string; organization_id: string; name: string; price: number; category: string; image: string; available: boolean;
+  id: string; organization_id: string; name: string; price: number; category: string; category_id?: string; image: string; available: boolean;
   requires_kitchen: boolean; description?: string; branch_id?: string; linked_ingredient_id?: string;
-  deduct_from_inventory: boolean; inventory_deduct_amount: number; created_at: number; updated_at: number;
+  deduct_from_inventory: boolean; inventory_deduct_amount: number; add_ons?: any[]; created_at: number; updated_at: number;
 }
 export interface ProductIngredient {
   id: string; product_id: string; ingredient_id: string; quantity_per_unit: number; organization_id: string; branch_id?: string; created_at: number;
@@ -26,7 +26,7 @@ export async function getProduct(ctx: TenantContext, productId: string): Promise
   return rows.length ? rows[0] as Product : null;
 }
 
-export async function createProduct(ctx: TenantContext, input: { name:string; price:number; category:string; image?:string; available?:boolean; requiresKitchen?:boolean; description?:string; branchId?:string; linkedIngredientId?:string; deductFromInventory?:boolean; inventoryDeductAmount?:number; }): Promise<Product> {
+export async function createProduct(ctx: TenantContext, input: { name:string; price:number; category:string; categoryId?:string; image?:string; available?:boolean; requiresKitchen?:boolean; description?:string; branchId?:string; linkedIngredientId?:string; deductFromInventory?:boolean; inventoryDeductAmount?:number; addOns?:any[]; }): Promise<Product> {
   const sql = getSql(); await setTenantContext(sql, ctx.organizationId);
   const targetBranchId = input.branchId || ctx.branchId || null;
   const countRows = targetBranchId
@@ -35,8 +35,14 @@ export async function createProduct(ctx: TenantContext, input: { name:string; pr
   const currentCount = Number((countRows[0] as any).count || 0);
   const limitCheck = await checkSubscriptionLimit(ctx.organizationId, 'menu_items', currentCount);
   if (!limitCheck.allowed) throw new Error(`Subscription limit reached: ${limitCheck.current}/${limitCheck.limit} active menu items for this branch. Please upgrade your plan.`);
+  let categoryId: string | null = input.categoryId || null;
+  if (categoryId) {
+    const categoryRows = await sql`SELECT id FROM categories WHERE id=${categoryId} AND organization_id=${ctx.organizationId} AND (branch_id=${targetBranchId} OR branch_id IS NULL) LIMIT 1`;
+    if (!categoryRows.length) throw new Error('Selected category is not available for this branch');
+    categoryId = categoryRows[0].id as string;
+  }
   const id = generateId();
-  await sql`INSERT INTO products (id, organization_id, name, price, category, image, available, requires_kitchen, description, branch_id, linked_ingredient_id, deduct_from_inventory, inventory_deduct_amount, created_at, updated_at) VALUES (${id}, ${ctx.organizationId}, ${input.name}, ${input.price}, ${input.category}, ${input.image || ''}, ${input.available ?? true}, ${input.requiresKitchen ?? true}, ${input.description || null}, ${targetBranchId}, ${input.linkedIngredientId || null}, ${input.deductFromInventory ?? false}, ${input.inventoryDeductAmount ?? 0}, NOW(), NOW())`;
+  await sql`INSERT INTO products (id, organization_id, name, price, category, category_id, image, available, requires_kitchen, description, branch_id, linked_ingredient_id, deduct_from_inventory, inventory_deduct_amount, add_ons, created_at, updated_at) VALUES (${id}, ${ctx.organizationId}, ${input.name}, ${input.price}, ${input.category}, ${categoryId}, ${input.image || ''}, ${input.available ?? true}, ${input.requiresKitchen ?? true}, ${input.description || null}, ${targetBranchId}, ${input.linkedIngredientId || null}, ${input.deductFromInventory ?? false}, ${input.inventoryDeductAmount ?? 0}, ${JSON.stringify(input.addOns || [])}::jsonb, NOW(), NOW())`;
   await logAudit(ctx.userId, 'product.create', { productId:id, name:input.name }, ctx.organizationId, ctx.branchId);
   const rows = await sql`SELECT * FROM products WHERE id = ${id} AND organization_id = ${ctx.organizationId}`;
   return rows[0] as Product;
