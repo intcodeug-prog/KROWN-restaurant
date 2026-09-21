@@ -31,7 +31,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!existing) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     if (branchForbidden(ctx, existing)) return NextResponse.json({ error: 'Forbidden: product belongs to another branch' }, { status: 403 });
     const body = await request.json();
-    const product = await updateProduct(ctx, id, { name: body.name, price: body.price, category: body.category, category_id: body.categoryId, image: body.image, available: body.available, requires_kitchen: body.requiresKitchen, description: body.description, linked_ingredient_id: body.linkedIngredientId, deduct_from_inventory: body.deductFromInventory, inventory_deduct_amount: body.inventoryDeductAmount, add_ons: Array.isArray(body.addOns) ? body.addOns : undefined });
+    if (body.name !== undefined && !String(body.name || '').trim()) return NextResponse.json({ error: 'Menu item name cannot be empty' }, { status: 400 });
+    if (body.price !== undefined && (!Number.isFinite(Number(body.price)) || Number(body.price) < 0)) return NextResponse.json({ error: 'A valid non-negative price is required' }, { status: 400 });
+    const product = await updateProduct(ctx, id, { name: body.name !== undefined ? String(body.name).trim() : undefined, price: body.price !== undefined ? Number(body.price) : undefined, category: body.category, category_id: body.categoryId, image: body.image, available: body.available, requires_kitchen: body.requiresKitchen, description: body.description, linked_ingredient_id: body.linkedIngredientId, deduct_from_inventory: body.deductFromInventory, inventory_deduct_amount: body.inventoryDeductAmount, add_ons: Array.isArray(body.addOns) ? body.addOns : undefined });
     return NextResponse.json({ data: product });
   } catch (error: any) {
     const status = String(error?.message || '').startsWith('Forbidden') ? 403 : 500;
