@@ -148,6 +148,14 @@ export const api = {
     saveRecipe: (id: string, ingredients: any[]) => apiFetch(`/api/products/${id}/recipe`, { method: 'POST', body: JSON.stringify({ ingredients }) }),
   },
 
+  // ── Categories ────────────────────────────────────────────────────────────
+  categories: {
+    list: () => apiFetch('/api/categories'),
+    create: (data: any) => apiFetch('/api/categories', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) => apiFetch(`/api/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => apiFetch(`/api/categories/${id}`, { method: 'DELETE' }),
+  },
+
   // ── Ingredients ───────────────────────────────────────────────────────────
   ingredients: {
     list: (branchId?: string) => {
