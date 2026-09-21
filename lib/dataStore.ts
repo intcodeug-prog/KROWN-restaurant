@@ -1119,7 +1119,7 @@ class DataStoreEngine {
   // ── Products ───────────────────────────────────────────────────────────────
 
   public addProduct(data: {
-    name: string; price: number; category: any; image: string;
+    name: string; price: number; category: any; categoryId?: string; image: string;
     available?: boolean; requiresKitchen?: boolean; description?: string;
     branchId?: string; branchName?: string;
     deductFromInventory?: boolean; inventoryDeductAmount?: number;
@@ -1129,6 +1129,7 @@ class DataStoreEngine {
       id: crypto.randomUUID(),
       name: data.name, price: Number(data.price),
       category: data.category || 'mains',
+      categoryId: data.categoryId,
       image: data.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
       available: data.available ?? true,
       requiresKitchen: data.requiresKitchen ?? true,
