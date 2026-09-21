@@ -30,7 +30,7 @@ export async function POST(
       );
     }
 
-    if (!canManageStaff(user, role)) {
+    if (!canManageStaff(user.role, role)) {
       return NextResponse.json(
         { data: null, error: 'Insufficient permissions to assign this role' },
         { status: 403 }
