@@ -56,6 +56,10 @@ export async function updateProduct(ctx: TenantContext, productId: string, updat
   if (ctx.branchId && product.branch_id && product.branch_id !== ctx.branchId) throw new Error('Forbidden: product belongs to another branch');
   const fields:string[]=[]; const values:any[]=[];
   for (const [key,value] of Object.entries(updates)) if (value !== undefined) { fields.push(key); values.push(value); }
+  if (updates.category_id !== undefined && updates.category_id !== null) {
+    const categoryRows = await sql`SELECT id FROM categories WHERE id=${updates.category_id} AND organization_id=${ctx.organizationId} AND (branch_id=${product.branch_id} OR branch_id IS NULL) LIMIT 1`;
+    if (!categoryRows.length) throw new Error('Selected category is not available for this branch');
+  }
   if (!fields.length) return product;
   const setClauses = fields.map((f,i)=>`${f} = $${i+1}`).join(', '); values.push(productId,ctx.organizationId);
   await sql(`UPDATE products SET ${setClauses}, updated_at = NOW() WHERE id = $${fields.length+1} AND organization_id = $${fields.length+2}`, values);
