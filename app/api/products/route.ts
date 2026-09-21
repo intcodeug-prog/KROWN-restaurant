@@ -25,11 +25,14 @@ export async function POST(request: NextRequest) {
   if (!hasPermission(ctx.role, 'products:create')) return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
   try {
     const body = await request.json();
+    if (!String(body.name || '').trim()) return NextResponse.json({ error: 'Menu item name is required' }, { status: 400 });
+    const price = Number(body.price);
+    if (!Number.isFinite(price) || price < 0) return NextResponse.json({ error: 'A valid non-negative price is required' }, { status: 400 });
     const branchId = body.branchId || ctx.branchId;
     if (!branchId) return NextResponse.json({ error: 'Branch is required' }, { status: 400 });
     await assertBranchAccess(ctx, branchId);
     const product = await createProduct(ctx, {
-      name: body.name, price: body.price, category: body.category, categoryId: body.categoryId, image: body.image,
+      name: String(body.name).trim(), price, category: body.category, categoryId: body.categoryId, image: body.image,
       available: body.available, requiresKitchen: body.requiresKitchen, description: body.description,
       branchId, linkedIngredientId: body.linkedIngredientId, deductFromInventory: body.deductFromInventory,
       addOns: Array.isArray(body.addOns) ? body.addOns : [],
