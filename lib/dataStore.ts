@@ -141,22 +141,53 @@ function fromDbOrder(r: any): Order {
   if (r.created_at) {
     parsedCreatedAt = typeof r.created_at === 'string' ? new Date(r.created_at).getTime() : Number(r.created_at);
   }
-  // Normalize type from snake_case (DB) to title case (client)
+
   const typeMap: Record<string, string> = { dine_in: 'Dine In', takeaway: 'Takeaway', delivery: 'Delivery' };
   const normalizedType = typeMap[r.type] || r.type || 'Dine In';
+  const normalizedPaymentStatus = r.payment_status === 'partial' ? 'partially_paid' : (r.payment_status || 'unpaid');
+
+  let rawItems: any[] = [];
+  if (Array.isArray(r.items)) rawItems = r.items;
+  else if (typeof r.items === 'string') {
+    try { rawItems = JSON.parse(r.items); } catch { rawItems = []; }
+  }
+  const normalizedItems = rawItems.map((item: any) => ({
+    ...item,
+    quantity: Number(item.quantity) || 0,
+    price: Number(item.price ?? item.unitPrice ?? 0) || 0,
+    unitPrice: Number(item.unitPrice ?? item.price ?? 0) || 0,
+  }));
+
+  let rawSplits: any[] = [];
+  if (Array.isArray(r.split_payments)) rawSplits = r.split_payments;
+  else if (typeof r.split_payments === 'string') {
+    try { rawSplits = JSON.parse(r.split_payments); } catch { rawSplits = []; }
+  }
+  const normalizedSplits = rawSplits.map((sp: any, index: number) => ({
+    ...sp,
+    id: sp.id || `${r.id || 'order'}-split-${index + 1}`,
+    paymentMethod: sp.paymentMethod || sp.method || 'Split Payment',
+    amount: Number(sp.amount) || 0,
+    paidAt: Number(sp.paidAt) || parsedCreatedAt,
+  }));
+
   return {
     id: r.id, table: r.table_number, place: r.place || undefined, seat: r.seat,
     type: normalizedType as any, status: r.status,
-    paymentStatus: r.payment_status || 'unpaid', paidAmount: r.paid_amount || 0,
-    splitPayments: r.split_payments || [], items: r.items ?? [],
-    subtotal: r.subtotal, tax: r.tax, total: r.total,
-    paymentMethod: r.payment_method,
-    isCorporateCredit: r.is_corporate_credit, companyId: r.company_id,
+    paymentStatus: normalizedPaymentStatus as any,
+    paidAmount: Number(r.paid_amount) || 0,
+    splitPayments: normalizedSplits,
+    items: normalizedItems as any,
+    subtotal: Number(r.subtotal) || 0,
+    tax: Number(r.tax) || 0,
+    total: Number(r.total) || 0,
+    paymentMethod: r.payment_method || undefined,
+    isCorporateCredit: Boolean(r.is_corporate_credit), companyId: r.company_id,
     companyName: r.company_name, companyStaffId: r.company_staff_id,
     companyStaffName: r.company_staff_name, workId: r.work_id,
-    prepEstimatedMinutes: r.prep_estimated_minutes,
-    amountReceived: r.amount_received ? Number(r.amount_received) : undefined,
-    change: r.change_amount ? Number(r.change_amount) : undefined,
+    prepEstimatedMinutes: Number(r.prep_estimated_minutes) || undefined,
+    amountReceived: r.amount_received != null ? Number(r.amount_received) : undefined,
+    change: r.change_amount != null ? Number(r.change_amount) : undefined,
     prepStartedAt: r.prep_started_at
       ? (typeof r.prep_started_at === 'string' ? new Date(r.prep_started_at).getTime() : Number(r.prep_started_at))
       : undefined,
@@ -180,12 +211,12 @@ function toDbProduct(p: Product): any {
 
 function fromDbProduct(r: any): Product {
   return {
-    id: r.id, name: r.name, price: r.price, category: r.category, categoryId: r.category_id ?? undefined,
+    id: r.id, name: r.name, price: Number(r.price) || 0, category: r.category, categoryId: r.category_id ?? undefined,
     image: r.image, available: r.available, requiresKitchen: r.requires_kitchen ?? true,
     description: r.description, branchId: r.branch_id, branchName: r.branch_name,
     linkedIngredientId: r.linked_ingredient_id ?? undefined,
     deductFromInventory: r.deduct_from_inventory ?? false,
-    inventoryDeductAmount: r.inventory_deduct_amount ?? 1, addOns: r.add_ons ?? [],
+    inventoryDeductAmount: Number(r.inventory_deduct_amount) || 1, addOns: r.add_ons ?? [],
   };
 }
 
@@ -303,11 +334,14 @@ function toDbExpense(e: Expense): any {
 }
 
 function fromDbExpense(r: any): Expense {
+  const createdAt = r.created_at
+    ? (typeof r.created_at === 'string' ? new Date(r.created_at).getTime() : Number(r.created_at))
+    : Date.now();
   return {
     id: r.id, branchId: r.branch_id, branchName: r.branch_name,
-    title: r.title, category: r.category, amountUGX: r.amount_ugx,
-    vatAmountUGX: r.vat_amount_ugx, receiptUrl: r.receipt_url,
-    notes: r.notes, createdAt: r.created_at,
+    title: r.title, category: r.category, amountUGX: Number(r.amount_ugx) || 0,
+    vatAmountUGX: Number(r.vat_amount_ugx) || 0, receiptUrl: r.receipt_url,
+    notes: r.notes, createdAt,
   };
 }
 
@@ -822,28 +856,42 @@ class DataStoreEngine {
       'Bank Transfer': { total: 0, count: 0, percentage: 0 },
       'Corporate Credit': { total: 0, count: 0, percentage: 0 },
     };
+
+    const addPayment = (method: string, rawAmount: unknown) => {
+      const amount = Number(rawAmount) || 0;
+      const label = String(method || 'Unknown').trim() || 'Unknown';
+      if (!breakdown[label]) breakdown[label] = { total: 0, count: 0, percentage: 0 };
+      breakdown[label].total += amount;
+      breakdown[label].count += 1;
+      return amount;
+    };
+
     let totalPaidSum = 0;
-    const paidOrders = orders.filter(o => o.paymentStatus === 'paid' || o.status === 'completed' || o.paymentStatus === 'partially_paid');
+    const paidOrders = orders.filter(o =>
+      o.paymentStatus === 'paid' ||
+      o.paymentStatus === 'partially_paid' ||
+      (o as any).paymentStatus === 'partial' ||
+      o.status === 'completed'
+    );
+
     paidOrders.forEach(o => {
-      if (o.splitPayments && o.splitPayments.length > 0) {
+      if (Array.isArray(o.splitPayments) && o.splitPayments.length > 0) {
         o.splitPayments.forEach((sp: any) => {
-          const pm = sp.paymentMethod || 'Cash';
-          if (!breakdown[pm]) breakdown[pm] = { total: 0, count: 0, percentage: 0 };
-          breakdown[pm].total += (sp.amount || 0);
-          breakdown[pm].count += 1;
-          totalPaidSum += (sp.amount || 0);
+          totalPaidSum += addPayment(sp.paymentMethod || sp.method || 'Split Payment', sp.amount);
         });
-      } else {
-        const pm = o.paymentMethod || 'Cash';
-        if (!breakdown[pm]) breakdown[pm] = { total: 0, count: 0, percentage: 0 };
-        const amt = o.paidAmount || o.total || 0;
-        breakdown[pm].total += amt;
-        breakdown[pm].count += 1;
-        totalPaidSum += amt;
+        return;
       }
+
+      const method = o.paymentMethod || 'Cash';
+      const amount = o.paymentStatus === 'partially_paid'
+        ? Number(o.paidAmount || 0)
+        : Number(o.paidAmount || o.total || 0);
+      totalPaidSum += addPayment(method === 'split' ? 'Split Payment' : method, amount);
     });
+
     if (totalPaidSum > 0) {
       Object.keys(breakdown).forEach(k => {
+        breakdown[k].total = Math.round(breakdown[k].total);
         breakdown[k].percentage = Math.round((breakdown[k].total / totalPaidSum) * 100);
       });
     }

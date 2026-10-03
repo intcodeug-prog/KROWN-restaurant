@@ -49,14 +49,45 @@ export async function updateStatus(ctx:TenantContext,orderId:string,newStatus:Or
 }
 
 export async function splitPayment(ctx:TenantContext,orderId:string,splits:SplitPaymentInput[]):Promise<Order>{
-  const sql=getSql(); await setTenantContext(sql,ctx.organizationId); const rows=await sql`SELECT * FROM orders WHERE id=${orderId} AND organization_id=${ctx.organizationId}`; if(!rows.length) throw new Error('Order not found'); const order=rows[0] as any; if(order.payment_status==='paid') throw new Error('Order is already paid');
-  const totalPaid=Math.round(splits.reduce((sum,s)=>sum+Number(s.amount||0),0)); if(!Number.isFinite(totalPaid)||totalPaid<=0) throw new Error('Split payment amount must be greater than zero');
+  const sql=getSql();
+  await setTenantContext(sql,ctx.organizationId);
+  const rows=await sql`SELECT * FROM orders WHERE id=${orderId} AND organization_id=${ctx.organizationId}`;
+  if(!rows.length) throw new Error('Order not found');
+  const order=rows[0] as any;
+  if(order.payment_status==='paid') throw new Error('Order is already paid');
+
+  const normalizedSplits=splits.map((s,index)=>({
+    id:`${orderId}-split-${index+1}`,
+    paymentMethod:String(s.method||'').trim(),
+    amount:Number(s.amount||0),
+    paidAt:Date.now(),
+    splitIndex:index+1,
+    totalSplits:splits.length,
+  }));
+  if(normalizedSplits.some(s=>!s.paymentMethod||!Number.isFinite(s.amount)||s.amount<=0)) throw new Error('Every split requires a valid payment method and amount');
+
+  const totalPaid=Math.round(normalizedSplits.reduce((sum,s)=>sum+s.amount,0));
   const existingPaid=Number((await sql`SELECT COALESCE(SUM(amount),0) AS total FROM accounting_ledger WHERE order_id=${orderId} AND organization_id=${ctx.organizationId} AND type='PAYMENT'`)[0]?.total||0);
-  const delta=Math.max(0,totalPaid-existingPaid); const cappedPaid=Math.min(Number(order.total||0),totalPaid); const paymentStatus=cappedPaid>=Number(order.total||0)?'paid':'partial'; const nextStatus=paymentStatus==='paid'?'completed':order.status;
-  await sql`UPDATE orders SET payment_status=${paymentStatus},paid_amount=${cappedPaid},payment_method='split',status=${nextStatus},updated_at=NOW() WHERE id=${orderId} AND organization_id=${ctx.organizationId}`;
-  if(delta>0) await sql`INSERT INTO accounting_ledger (id,organization_id,order_id,restaurant_id,type,amount,created_at) VALUES (${generateId()},${ctx.organizationId},${orderId},${order.restaurant_id||null},'PAYMENT',${delta},NOW())`;
-  await logAudit(ctx.userId,'order.split_payment',{orderId,splits:splits.length,totalPaid:cappedPaid},ctx.organizationId,ctx.branchId);
-  const updated=await sql`SELECT * FROM orders WHERE id=${orderId} AND organization_id=${ctx.organizationId}`; return updated[0] as Order;
+  const delta=Math.max(0,totalPaid-existingPaid);
+  const cappedPaid=Math.min(Number(order.total||0),totalPaid);
+  const paymentStatus=cappedPaid>=Number(order.total||0)?'paid':'partial';
+  const nextStatus=paymentStatus==='paid'?'completed':order.status;
+
+  await sql`UPDATE orders
+    SET payment_status=${paymentStatus},
+        paid_amount=${cappedPaid},
+        payment_method='split',
+        split_payments=${JSON.stringify(normalizedSplits)},
+        status=${nextStatus},
+        updated_at=NOW()
+    WHERE id=${orderId} AND organization_id=${ctx.organizationId}`;
+
+  if(delta>0) await sql`INSERT INTO accounting_ledger (id,organization_id,order_id,restaurant_id,type,amount,created_at)
+    VALUES (${generateId()},${ctx.organizationId},${orderId},${order.restaurant_id||null},'PAYMENT',${delta},NOW())`;
+
+  await logAudit(ctx.userId,'order.split_payment',{orderId,splits:normalizedSplits,totalPaid:cappedPaid},ctx.organizationId,ctx.branchId);
+  const updated=await sql`SELECT * FROM orders WHERE id=${orderId} AND organization_id=${ctx.organizationId}`;
+  return updated[0] as Order;
 }
 
 export async function addItemsToOrder(ctx:TenantContext,orderId:string,items:{productId:string;quantity:number;notes?:string}[]):Promise<Order>{
