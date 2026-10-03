@@ -90,71 +90,121 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
     return () => unsub();
   }, [dateFilterMode, dateFrom, dateTo, managerBranchId]);
 
-  // Finance calculations
-  const grossSales = orders
-    .filter(o => o.paymentStatus === 'paid' || o.status === 'completed')
-    .reduce((sum, o) => sum + (o.total || 0), 0);
-  const totalExpenses = expenses.reduce((sum, e) => sum + (e.amountUGX || 0), 0);
+  // Finance calculations — all monetary DB values are normalized to numbers in dataStore.
+  const paidOrders = orders.filter(o =>
+    o.paymentStatus === 'paid' ||
+    o.paymentStatus === 'partially_paid' ||
+    o.paymentStatus === 'partial' ||
+    o.status === 'completed'
+  );
+
+  const amountCollectedForOrder = (o: any) => {
+    if (o.paymentStatus === 'partially_paid' || o.paymentStatus === 'partial') return Number(o.paidAmount || 0);
+    return Number(o.paidAmount || o.total || 0);
+  };
+
+  const grossSales = paidOrders.reduce((sum, o) => sum + amountCollectedForOrder(o), 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amountUGX) || 0), 0);
   const netProfit = grossSales - totalExpenses;
-  const totalMealsSold = orders
-    .filter(o => o.paymentStatus === 'paid' || o.status === 'completed')
-    .reduce((sum, o) => sum + (o.items?.reduce((itemSum: number, item: any) => itemSum + (Number(item.quantity) || 0), 0) || 0), 0);
-  const totalRevenueFromCompleted = orders
-    .filter(o => o.paymentStatus === 'paid' || o.status === 'completed')
-    .reduce((sum, o) => sum + (o.total || 0), 0);
+  const totalMealsSold = paidOrders.reduce(
+    (sum, o) => sum + ((o.items || []).reduce((itemSum: number, item: any) => itemSum + (Number(item.quantity) || 0), 0)),
+    0
+  );
   const paymentBreakdown = dataStore.getPaymentBreakdown(orders);
 
-  // Print PDF Finance Report
+  const productById = new Map<string, any>(products.map((p: any) => [String(p.id), p]));
+  const productByName = new Map<string, any>(products.map((p: any) => [String(p.name || '').trim().toLowerCase(), p]));
+  const mealSalesRows = paidOrders.flatMap((order: any) =>
+    (order.items || []).map((item: any) => {
+      const product = productById.get(String(item.productId || item.id || '')) ||
+        productByName.get(String(item.name || '').trim().toLowerCase());
+      const quantity = Number(item.quantity) || 0;
+      const unitPrice = Number(item.unitPrice ?? item.price ?? product?.price ?? 0) || 0;
+      const addOnPerUnit = Array.isArray(item.addOns)
+        ? item.addOns.reduce((sum: number, addOn: any) => sum + (Number(addOn.price) || 0), 0)
+        : 0;
+      return {
+        orderId: order.id,
+        createdAt: Number(order.createdAt) || Date.now(),
+        orderType: order.type || 'Dine In',
+        table: order.table || '',
+        meal: item.name || product?.name || 'Unknown item',
+        category: item.category || product?.category || 'Uncategorized',
+        quantity,
+        unitPrice,
+        lineTotal: (unitPrice + addOnPerUnit) * quantity,
+        paymentMethod: order.paymentMethod === 'split' ? 'Split Payment' : (order.paymentMethod || 'Cash'),
+        orderPaid: amountCollectedForOrder(order),
+        paymentStatus: order.paymentStatus || order.status || '',
+      };
+    })
+  );
+
+  const categoryMap = new Map<string, { category: string; quantity: number; revenue: number }>();
+  mealSalesRows.forEach((row: any) => {
+    const key = row.category || 'Uncategorized';
+    const current = categoryMap.get(key) || { category: key, quantity: 0, revenue: 0 };
+    current.quantity += Number(row.quantity) || 0;
+    current.revenue += Number(row.lineTotal) || 0;
+    categoryMap.set(key, current);
+  });
+  const categorySales = Array.from(categoryMap.values()).sort((a, b) => b.quantity - a.quantity || b.revenue - a.revenue);
+  const bestCategory = categorySales[0] || null;
+  const leastCategory = categorySales.length
+    ? [...categorySales].sort((a, b) => a.quantity - b.quantity || a.revenue - b.revenue)[0]
+    : null;
+
+  const financePeriodLabel =
+    dateFilterMode === 'today' ? 'Today' :
+    dateFilterMode === '7days' ? 'Last 7 Days' :
+    dateFilterMode === '30days' ? 'Last 30 Days' :
+    dateFilterMode === 'all' ? 'All Time' :
+    `${dateFrom} to ${dateTo}`;
+
+  // Print Finance Report
   const printFinancePDF = () => {
     if (typeof window === 'undefined') return;
     const printWin = window.open('', '_blank');
     if (!printWin) return;
-    
-    const paperWidth = '80mm';
+
     const divider = '-'.repeat(48);
     const doubleDivider = '='.repeat(48);
-    
     printWin.document.write(`
       <html>
         <head>
-          <title>Finance Statement - Thermal</title>
+          <title>KROWN Finance Statement</title>
           <style>
-            @page { size: ${paperWidth} auto; margin: 0; }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              width: ${paperWidth};
-              padding: 10px;
-              margin: 0 auto;
-              font-size: 13px;
-              line-height: 1.3;
-              color: #000;
-            }
+            @page { size: 80mm auto; margin: 0; }
+            body { font-family: 'Courier New', Courier, monospace; width: 80mm; padding: 10px; margin: 0 auto; font-size: 12px; line-height: 1.35; color: #000; }
             .center { text-align: center; font-weight: bold; }
-            .justify { display: flex; justify-content: space-between; }
+            .justify { display: flex; justify-content: space-between; gap: 8px; }
+            .small { font-size: 10px; }
           </style>
         </head>
         <body>
           <div class="center">KROWN POS</div>
           <div class="center">BRANCH FINANCIAL STATEMENT</div>
-          <div class="center">Generated: ${new Date().toLocaleString()}</div>
+          <div class="center small">${financePeriodLabel}</div>
+          <div class="center small">Generated: ${new Date().toLocaleString()}</div>
           <div>${doubleDivider}</div>
-          
-          <div class="justify"><span>Gross Revenue:</span> <span>${formatUGX(grossSales)}</span></div>
-          <div class="justify"><span>Total Expenses:</span> <span>${formatUGX(totalExpenses)}</span></div>
-          <div class="justify" style="font-weight: bold;"><span>Net Operating Profit:</span> <span>${formatUGX(netProfit)}</span></div>
+          <div class="justify"><span>Collected Revenue:</span><span>${formatUGX(grossSales)}</span></div>
+          <div class="justify"><span>Total Expenses:</span><span>${formatUGX(totalExpenses)}</span></div>
+          <div class="justify"><strong>Net P&L:</strong><strong>${formatUGX(netProfit)}</strong></div>
+          <div class="justify"><span>Meals / Items:</span><span>${totalMealsSold}</span></div>
           <div>${divider}</div>
-          
-          <div class="center">PAYMENT METHODS BREAKDOWN</div>
-          <div>${divider}</div>
-          ${Object.entries(paymentBreakdown).map(([method, data]) => `
-            <div class="justify">
-              <span>${method}:</span>
-              <span>${formatUGX(data.total)} (${data.percentage}%)</span>
-            </div>
+          <div class="center">PAYMENT METHODS</div>
+          ${Object.entries(paymentBreakdown).filter(([, data]) => data.count > 0).map(([method, data]) => `
+            <div class="justify"><span>${method}</span><span>${formatUGX(data.total)} (${data.percentage}%)</span></div>
           `).join('')}
+          <div>${divider}</div>
+          <div class="center">CATEGORY PERFORMANCE</div>
+          ${categorySales.map(c => `<div class="justify"><span>${c.category} (${c.quantity})</span><span>${formatUGX(c.revenue)}</span></div>`).join('')}
+          <div>${divider}</div>
+          <div class="small">Best sold: ${bestCategory ? `${bestCategory.category} (${bestCategory.quantity})` : 'No sales'}</div>
+          <div class="small">Least sold: ${leastCategory ? `${leastCategory.category} (${leastCategory.quantity})` : 'No sales'}</div>
           <div>${doubleDivider}</div>
-          <div class="center">Powered by Krown POS</div>
-          <br/><br/><br/>
+          <div class="center">Powered by KROWN POS</div>
+          <br/><br/>
         </body>
       </html>
     `);
@@ -163,46 +213,70 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
     setTimeout(() => { printWin.print(); printWin.close(); }, 300);
   };
 
-  // Download Finance Report as CSV
+  // Download a complete, Excel-friendly Finance Report as CSV
   const downloadFinanceCSV = () => {
     if (typeof window === 'undefined') return;
-    const rows: string[][] = [
+
+    const rows: Array<Array<string | number>> = [
       ['KROWN POS - Branch Financial Statement'],
-      [`Period: ${dateFrom} to ${dateTo}`],
-      [''],
-      ['Metric', 'Amount (UGX)'],
-      ['Gross Revenue', String(grossSales)],
-      ['Total Operating Expenses', String(totalExpenses)],
-      ['Net Operating Profit', String(netProfit)],
-      [''],
-      ['Payment Method', 'Total Revenue', 'Percentage'],
-      ...Object.entries(paymentBreakdown).map(([method, data]) => [method, String(data.total), `${data.percentage}%`]),
-      [''],
-      ['Order ID', 'Type', 'Table', 'Date', 'Payment', 'Total (UGX)'],
-      ...orders.map(o => [
-        o.id,
-        o.type || '',
-        o.table || '',
-        o.createdAt ? new Date(o.createdAt).toLocaleString() : '',
-        o.paymentMethod || '',
-        String(o.total || 0)
+      ['Period', financePeriodLabel],
+      ['Generated', new Date().toLocaleString()],
+      [],
+      ['FINANCIAL SUMMARY'],
+      ['Metric', 'Amount / Count'],
+      ['Collected Revenue (UGX)', Math.round(grossSales)],
+      ['Operating Expenses (UGX)', Math.round(totalExpenses)],
+      ['Net P&L (UGX)', Math.round(netProfit)],
+      ['Meals / Items Sold', totalMealsSold],
+      ['Paid / Part-paid Orders', paidOrders.length],
+      [],
+      ['PAYMENT METHOD BREAKDOWN'],
+      ['Payment Method', 'Transactions', 'Amount (UGX)', 'Share'],
+      ...Object.entries(paymentBreakdown).map(([method, data]) => [
+        method, data.count, Math.round(data.total), `${data.percentage}%`
       ]),
-      [''],
+      [],
+      ['CATEGORY SALES PERFORMANCE'],
+      ['Category', 'Items Sold', 'Revenue (UGX)'],
+      ...categorySales.map(c => [c.category, c.quantity, Math.round(c.revenue)]),
+      [],
+      ['ITEMIZED MEAL SALES'],
+      ['Date', 'Order ID', 'Order Type', 'Table', 'Meal / Item', 'Category', 'Quantity', 'Unit Price (UGX)', 'Line Sales (UGX)', 'Payment Method', 'Order Amount Paid (UGX)', 'Payment Status'],
+      ...mealSalesRows.map((row: any) => [
+        new Date(row.createdAt).toLocaleString(),
+        row.orderId,
+        row.orderType,
+        row.table,
+        row.meal,
+        row.category,
+        row.quantity,
+        Math.round(row.unitPrice),
+        Math.round(row.lineTotal),
+        row.paymentMethod,
+        Math.round(row.orderPaid),
+        row.paymentStatus,
+      ]),
+      [],
+      ['EXPENSES'],
       ['Expense ID', 'Category', 'Description', 'Date', 'Amount (UGX)'],
-      ...expenses.map(e => [
+      ...expenses.map((e: any) => [
         e.id,
         e.category || '',
-        e.description || '',
-        e.date ? new Date(e.date).toLocaleString() : '',
-        String(e.amountUGX || 0)
-      ])
+        e.title || e.description || '',
+        e.createdAt ? new Date(Number(e.createdAt)).toLocaleString() : '',
+        Math.round(Number(e.amountUGX) || 0),
+      ]),
     ];
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+    const csv = '\uFEFF' + rows
+      .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    const safePeriod = financePeriodLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     a.href = url;
-    a.download = `krown-financial-statement-${dateFrom}-to-${dateTo}.csv`;
+    a.download = `krown-finance-${safePeriod || 'report'}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -345,7 +419,7 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Finance & P&L Analytics</h2>
-                  <p className="text-slate-500 font-medium text-xs">Revenue, expenses, net profit, and payment breakdown</p>
+                  <p className="text-slate-500 font-medium text-xs">Collected revenue, payment methods, meal-level sales, category performance, expenses and net P&L</p>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -416,6 +490,95 @@ export default function ManagerPage({ user, setView }: { user: any, setView: (v:
                       <p className="text-[11px] text-slate-400 font-medium">{data.count} transactions</p>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Category performance */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div className="bg-white/80 dark:bg-[#121214]/80 border border-black/5 dark:border-white/10 rounded-[2rem] p-6 shadow-xl">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Best Sold Category</p>
+                  <h3 className="text-2xl font-extrabold text-green-500 mt-2">{bestCategory?.category || 'No sales yet'}</h3>
+                  <p className="text-xs text-slate-500 mt-1">{bestCategory ? `${bestCategory.quantity} items • ${formatUGX(bestCategory.revenue)}` : 'No paid sales in this period'}</p>
+                </div>
+                <div className="bg-white/80 dark:bg-[#121214]/80 border border-black/5 dark:border-white/10 rounded-[2rem] p-6 shadow-xl">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Least Sold Category</p>
+                  <h3 className="text-2xl font-extrabold text-orange-500 mt-2">{leastCategory?.category || 'No sales yet'}</h3>
+                  <p className="text-xs text-slate-500 mt-1">{leastCategory ? `${leastCategory.quantity} items • ${formatUGX(leastCategory.revenue)}` : 'No paid sales in this period'}</p>
+                </div>
+                <div className="bg-white/80 dark:bg-[#121214]/80 border border-black/5 dark:border-white/10 rounded-[2rem] p-6 shadow-xl">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Paid / Part-paid Orders</p>
+                  <h3 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-2">{paidOrders.length}</h3>
+                  <p className="text-xs text-slate-500 mt-1">{financePeriodLabel}</p>
+                </div>
+              </div>
+
+              <div className="bg-white/80 dark:bg-[#121214]/80 border border-black/5 dark:border-white/10 rounded-[2.5rem] p-6 shadow-xl overflow-hidden">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Category Sales Performance</h3>
+                    <p className="text-xs text-slate-500">Quantity sold and sales value by menu category</p>
+                  </div>
+                  <span className="text-xs font-bold text-orange-500">{categorySales.length} categories</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-[11px] uppercase tracking-wider text-slate-400 border-b border-black/5 dark:border-white/10">
+                      <tr><th className="text-left py-3">Category</th><th className="text-right py-3">Items Sold</th><th className="text-right py-3">Revenue</th></tr>
+                    </thead>
+                    <tbody>
+                      {categorySales.map((category) => (
+                        <tr key={category.category} className="border-b border-black/5 dark:border-white/5 last:border-0">
+                          <td className="py-3 font-bold text-slate-900 dark:text-white">{category.category}</td>
+                          <td className="py-3 text-right text-slate-600 dark:text-slate-300">{category.quantity}</td>
+                          <td className="py-3 text-right font-bold text-orange-500">{formatUGX(category.revenue)}</td>
+                        </tr>
+                      ))}
+                      {categorySales.length === 0 && <tr><td colSpan={3} className="py-8 text-center text-slate-400">No paid sales in this period.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white/80 dark:bg-[#121214]/80 border border-black/5 dark:border-white/10 rounded-[2.5rem] p-6 shadow-xl overflow-hidden">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Itemized Meal Sales</h3>
+                    <p className="text-xs text-slate-500">Every sold meal/item with category, quantity, value and payment method</p>
+                  </div>
+                  <span className="text-xs font-bold text-orange-500">{mealSalesRows.length} line items</span>
+                </div>
+                <div className="overflow-x-auto max-h-[28rem] custom-scrollbar">
+                  <table className="w-full text-sm min-w-[1050px]">
+                    <thead className="sticky top-0 bg-white dark:bg-[#121214] text-[11px] uppercase tracking-wider text-slate-400 border-b border-black/5 dark:border-white/10">
+                      <tr>
+                        <th className="text-left py-3 pr-4">Date</th>
+                        <th className="text-left py-3 pr-4">Meal / Item</th>
+                        <th className="text-left py-3 pr-4">Category</th>
+                        <th className="text-left py-3 pr-4">Order Type</th>
+                        <th className="text-right py-3 pr-4">Qty</th>
+                        <th className="text-right py-3 pr-4">Unit Price</th>
+                        <th className="text-right py-3 pr-4">Line Sales</th>
+                        <th className="text-left py-3 pr-4">Payment</th>
+                        <th className="text-right py-3">Order Paid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mealSalesRows.map((row: any, index: number) => (
+                        <tr key={`${row.orderId}-${index}`} className="border-b border-black/5 dark:border-white/5 last:border-0">
+                          <td className="py-3 pr-4 whitespace-nowrap text-xs text-slate-500">{new Date(row.createdAt).toLocaleString()}</td>
+                          <td className="py-3 pr-4 font-bold text-slate-900 dark:text-white">{row.meal}</td>
+                          <td className="py-3 pr-4"><span className="px-2 py-1 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs font-bold">{row.category}</span></td>
+                          <td className="py-3 pr-4 text-slate-600 dark:text-slate-300">{row.orderType}</td>
+                          <td className="py-3 pr-4 text-right">{row.quantity}</td>
+                          <td className="py-3 pr-4 text-right">{formatUGX(row.unitPrice)}</td>
+                          <td className="py-3 pr-4 text-right font-bold">{formatUGX(row.lineTotal)}</td>
+                          <td className="py-3 pr-4 font-medium text-slate-700 dark:text-slate-200">{row.paymentMethod}</td>
+                          <td className="py-3 text-right font-bold text-green-500">{formatUGX(row.orderPaid)}</td>
+                        </tr>
+                      ))}
+                      {mealSalesRows.length === 0 && <tr><td colSpan={9} className="py-10 text-center text-slate-400">No paid meal sales in this period.</td></tr>}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </motion.div>
