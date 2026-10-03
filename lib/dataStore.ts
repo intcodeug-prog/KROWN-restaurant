@@ -882,7 +882,7 @@ class DataStoreEngine {
         return;
       }
 
-      const method = o.paymentMethod || 'Cash';
+      const method = String(o.paymentMethod || 'Cash');
       const amount = o.paymentStatus === 'partially_paid'
         ? Number(o.paidAmount || 0)
         : Number(o.paidAmount || o.total || 0);
