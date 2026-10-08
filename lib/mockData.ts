@@ -22,6 +22,16 @@ export interface Product {
   deductFromInventory?: boolean; // If true, selling this product reduces inventory
   inventoryDeductAmount?: number; // How many units to deduct per sale
   addOns?: ProductAddOn[];       // Configurable extras sold with this menu item
+  originalPrice?: number;
+  effectivePrice?: number;
+  discountPercentage?: number;
+  discountAmount?: number;
+  promotionId?: string;
+  promotionName?: string;
+  promotionStartDate?: string;
+  promotionEndDate?: string | null;
+  promotionWeekdays?: number[];
+  promotionActive?: boolean;
 }
 
 export interface Branch {
@@ -154,6 +164,11 @@ export interface OrderItem {
   category?: string;
   image?: string;
   addOns?: { name: string; price: number }[];
+  originalUnitPrice?: number;
+  discountPercentage?: number;
+  discountAmountPerUnit?: number;
+  promotionId?: string;
+  promotionName?: string;
 }
 
 export interface Order {
