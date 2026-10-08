@@ -217,6 +217,16 @@ function fromDbProduct(r: any): Product {
     linkedIngredientId: r.linked_ingredient_id ?? undefined,
     deductFromInventory: r.deduct_from_inventory ?? false,
     inventoryDeductAmount: Number(r.inventory_deduct_amount) || 1, addOns: r.add_ons ?? [],
+    originalPrice: r.original_price != null ? Number(r.original_price) : Number(r.price) || 0,
+    effectivePrice: r.effective_price != null ? Number(r.effective_price) : Number(r.price) || 0,
+    discountPercentage: r.discount_percentage != null ? Number(r.discount_percentage) : undefined,
+    discountAmount: r.discount_amount != null ? Number(r.discount_amount) : undefined,
+    promotionId: r.promotion_id ?? undefined,
+    promotionName: r.promotion_name ?? undefined,
+    promotionStartDate: r.promotion_start_date ?? undefined,
+    promotionEndDate: r.promotion_end_date ?? undefined,
+    promotionWeekdays: Array.isArray(r.promotion_weekdays) ? r.promotion_weekdays.map(Number) : undefined,
+    promotionActive: Boolean(r.promotion_active),
   };
 }
 
