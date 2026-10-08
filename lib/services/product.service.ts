@@ -3,11 +3,14 @@ import { getSql } from '@/lib/neon-server';
 import { TenantContext, setTenantContext, checkSubscriptionLimit } from '@/lib/tenant';
 import { generateId } from '@/lib/id';
 import { logAudit } from '@/lib/audit';
+import { calculatePromotionalPrice, getActivePromotionsByProduct } from '@/lib/services/promotion.service';
 
 export interface Product {
   id: string; organization_id: string; name: string; price: number; category: string; category_id?: string; image: string; available: boolean;
   requires_kitchen: boolean; description?: string; branch_id?: string; linked_ingredient_id?: string;
   deduct_from_inventory: boolean; inventory_deduct_amount: number; add_ons?: any[]; created_at: number; updated_at: number;
+  original_price?: number; effective_price?: number; discount_percentage?: number; discount_amount?: number;
+  promotion_id?: string; promotion_name?: string; promotion_start_date?: string; promotion_end_date?: string | null; promotion_weekdays?: number[]; promotion_active?: boolean;
 }
 export interface ProductIngredient {
   id: string; product_id: string; ingredient_id: string; quantity_per_unit: number; organization_id: string; branch_id?: string; created_at: number;
@@ -18,7 +21,34 @@ export async function listProducts(ctx: TenantContext, branchId?: string): Promi
   const rows = branchId
     ? await sql`SELECT * FROM products WHERE organization_id = ${ctx.organizationId} AND (branch_id = ${branchId} OR branch_id IS NULL) ORDER BY name ASC`
     : await sql`SELECT * FROM products WHERE organization_id = ${ctx.organizationId} ORDER BY name ASC`;
-  return rows as Product[];
+
+  const promotions = await getActivePromotionsByProduct(ctx, branchId);
+  return (rows as Product[]).map((product) => {
+    const promotion = promotions.get(product.id);
+    if (!promotion) {
+      const normalPrice = Number(product.price) || 0;
+      return {
+        ...product,
+        original_price: normalPrice,
+        effective_price: normalPrice,
+        promotion_active: false,
+      };
+    }
+    const pricing = calculatePromotionalPrice(Number(product.price), promotion);
+    return {
+      ...product,
+      original_price: pricing.originalPrice,
+      effective_price: pricing.effectivePrice,
+      discount_percentage: pricing.discountPercentage,
+      discount_amount: pricing.discountAmount,
+      promotion_id: pricing.promotionId,
+      promotion_name: pricing.promotionName,
+      promotion_start_date: pricing.promotionStartDate,
+      promotion_end_date: pricing.promotionEndDate,
+      promotion_weekdays: pricing.promotionWeekdays,
+      promotion_active: true,
+    };
+  });
 }
 export async function getProduct(ctx: TenantContext, productId: string): Promise<Product | null> {
   const sql = getSql(); await setTenantContext(sql, ctx.organizationId);
