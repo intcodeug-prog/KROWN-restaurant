@@ -5,6 +5,7 @@ import { generateId } from '@/lib/id';
 import { logAudit } from '@/lib/audit';
 import * as inventoryService from '@/lib/services/inventory.service';
 import type { Order, OrderItem } from '@/lib/services/order.service';
+import { calculatePromotionalPrice, getActivePromotionsByProduct } from '@/lib/services/promotion.service';
 
 // KROWN selling prices are final prices. Tax is intentionally disabled.
 const VAT_RATE = 0;
@@ -56,6 +57,7 @@ export async function createIdempotentOrder(ctx: TenantContext, input: {
 
   let subtotal = 0;
   const processedItems: OrderItem[] = [];
+  const activePromotions = await getActivePromotionsByProduct(ctx, input.branchId);
   for (const item of input.items) {
     const rows = await sql`SELECT id,name,price,available FROM products WHERE id=${item.productId} AND organization_id=${ctx.organizationId} AND (branch_id=${input.branchId} OR branch_id IS NULL) LIMIT 1`;
     if (!rows.length) throw new Error(`Product not found: ${item.productId}`);
@@ -63,10 +65,26 @@ export async function createIdempotentOrder(ctx: TenantContext, input: {
     if (!product.available) throw new Error(`Product unavailable: ${product.name}`);
     const qty = Number(item.quantity);
     if (!Number.isFinite(qty) || qty <= 0) throw new Error('Invalid order quantity');
-    let itemTotal = Number(product.price) * qty;
+    const baseUnitPrice = Number(product.price);
+    const promotion = activePromotions.get(String(item.productId));
+    const promotional = promotion ? calculatePromotionalPrice(baseUnitPrice, promotion) : null;
+    const unitPrice = promotional?.effectivePrice ?? baseUnitPrice;
+    let itemTotal = unitPrice * qty;
     for (const addOn of item.addOns || []) itemTotal += Number(addOn.price) * qty;
     subtotal += itemTotal;
-    processedItems.push({ productId:item.productId, quantity:qty, unitPrice:Number(product.price), name:product.name, notes:item.notes, addOns:item.addOns });
+    processedItems.push({
+      productId: item.productId,
+      quantity: qty,
+      unitPrice,
+      originalUnitPrice: promotional?.originalPrice ?? baseUnitPrice,
+      discountPercentage: promotional?.discountPercentage ?? 0,
+      discountAmountPerUnit: promotional?.discountAmount ?? 0,
+      promotionId: promotional?.promotionId,
+      promotionName: promotional?.promotionName,
+      name: product.name,
+      notes: item.notes,
+      addOns: item.addOns,
+    });
   }
 
   // Tax is disabled for all new orders. Historical orders remain untouched.
