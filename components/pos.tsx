@@ -99,7 +99,22 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
 
     sync();
     const unsub = dataStore.subscribe(sync);
-    return () => unsub();
+
+    // Promotion boundaries are evaluated by the server. Refresh at the next
+    // local day boundary and whenever the POS regains focus so Friday/Saturday/
+    // Sunday pricing appears automatically and normal pricing returns on Monday.
+    const refreshPromotions = () => { dataStore.refresh().catch(() => undefined); };
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 1, 0);
+    const midnightTimer = window.setTimeout(refreshPromotions, Math.max(1000, nextMidnight.getTime() - now.getTime()));
+    window.addEventListener('focus', refreshPromotions);
+
+    return () => {
+      unsub();
+      window.clearTimeout(midnightTimer);
+      window.removeEventListener('focus', refreshPromotions);
+    };
   }, [activeStaff?.assignedBranchId]);
 
   const toggleTheme = () => {
@@ -136,7 +151,14 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
       if (existing) {
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { ...product, quantity: 1, addOns: selectedAddOns || [] }];
+      const effectivePrice = Number(product.effectivePrice ?? product.price) || 0;
+      return [...prev, {
+        ...product,
+        price: effectivePrice,
+        originalPrice: Number(product.originalPrice ?? product.price) || effectivePrice,
+        quantity: 1,
+        addOns: selectedAddOns || [],
+      }];
     });
   };
 
@@ -629,7 +651,24 @@ export default function POSPage({ user, setView, activeStaff }: { user: any; set
                           )}
                           <div className="flex w-full items-center justify-between mt-2">
                             <div>
-                              <p className="text-orange-500 font-bold text-base leading-none">{formatUGX(product.price)}</p>
+                              {product.promotionActive && Number(product.discountPercentage || 0) > 0 ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-slate-400 dark:text-slate-500 text-xs font-semibold line-through">
+                                      {formatUGX(product.originalPrice ?? product.price)}
+                                    </p>
+                                    <span className="rounded-full bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 text-[10px] font-extrabold text-orange-600 dark:text-orange-400">
+                                      {Number(product.discountPercentage)}% OFF
+                                    </span>
+                                  </div>
+                                  <p className="text-orange-500 font-extrabold text-base leading-none">
+                                    {formatUGX(product.effectivePrice ?? product.price)}
+                                  </p>
+                                  <p className="text-[10px] font-bold text-slate-400">Fri • Sat • Sun</p>
+                                </div>
+                              ) : (
+                                <p className="text-orange-500 font-bold text-base leading-none">{formatUGX(product.price)}</p>
+                              )}
                             </div>
                             <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-500 group-hover:bg-orange-500 group-hover:text-white transition-colors">
                               <Plus className="w-4 h-4" />

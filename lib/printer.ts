@@ -121,6 +121,14 @@ export function generateFormattedThermalReceipt(
       const wrappedLines = wrapText(itemTitle, lineCharLength - itemPriceStr.length - 2);
       text += formatLine(wrappedLines[0], itemPriceStr) + '\n';
       for (let i = 1; i < wrappedLines.length; i++) text += wrappedLines[i] + '\n';
+      if (Number(item.discountPercentage || 0) > 0) {
+        const originalUnitPrice = Number(item.originalUnitPrice ?? item.original_price ?? item.unitPrice ?? item.price ?? 0);
+        const discountedUnitPrice = Number(item.unitPrice ?? item.price ?? 0);
+        const qty = Number(item.quantity || 1);
+        const saved = Math.max(0, (originalUnitPrice - discountedUnitPrice) * qty);
+        text += formatLine(`   ${Number(item.discountPercentage)}% DISCOUNT`, `-${formatUGX(saved)}`) + '\n';
+        if (item.promotionName) text += wrapText(`   ${item.promotionName}`, lineCharLength).join('\n') + '\n';
+      }
       if (item.addOns?.length) item.addOns.forEach((a: any) => text += formatLine(`   + ${a.name}`, formatUGX(a.price * (item.quantity || 1))) + '\n');
       if (item.note || item.notes) text += '  ' + wrapText(`(Note: ${item.note || item.notes})`, lineCharLength - 4).join('\n  ') + '\n';
     });
